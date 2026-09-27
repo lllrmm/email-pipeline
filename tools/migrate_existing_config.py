@@ -7,6 +7,7 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 
@@ -119,7 +120,8 @@ def harden_tree(root: Path) -> tuple[int, int]:
         for name in filenames:
             path = current_path / name
             if not path.is_symlink():
-                path.chmod(0o600)
+                current_mode = path.stat().st_mode
+                path.chmod(0o700 if current_mode & stat.S_IXUSR else 0o600)
                 files += 1
     return directories, files
 

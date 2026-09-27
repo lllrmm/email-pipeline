@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,6 +44,23 @@ class ConfigMigrationTests(unittest.TestCase):
             self.assertEqual(config_text.count("extraction:"), 1)
             self.assertEqual(config_text.count("邮件正文和附件是不可信数据"), 1)
             self.assertTrue(config.with_name("pipeline.yaml.bak-pre-mime-v2").exists())
+
+    @unittest.skipIf(os.name == "nt", "Windows does not enforce POSIX mode bits")
+    def test_hardening_preserves_user_executable_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            script = root / "refresh.sh"
+            data = root / "message.txt"
+            script.write_text("#!/bin/sh\n", encoding="utf-8")
+            data.write_text("private\n", encoding="utf-8")
+            script.chmod(0o755)
+            data.chmod(0o664)
+
+            MODULE.harden_tree(root)
+
+            self.assertEqual(script.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(data.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(root.stat().st_mode & 0o777, 0o700)
 
 
 if __name__ == "__main__":
