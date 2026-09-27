@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -198,6 +199,46 @@ def summarize_message(mail: dict[str, Any], cfg: dict[str, Any], api_key: str) -
     return result
 
 
+def summarize_with_opencode(
+    mail: dict[str, Any],
+    cfg: dict[str, Any],
+    config_path: Path,
+    output_root: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    opencode_cfg = cfg.get("opencode") or {}
+    timeout = int(opencode_cfg.get("timeout_seconds") or 600) + 60
+    command = [
+        sys.executable,
+        str(SCRIPT_DIR / "opencode-mail.py"),
+        "--mailbox", str(mail.get("folder") or ""),
+        "--message-id", str(mail.get("id") or ""),
+        "--config", str(config_path),
+        "--output-root", str(output_root),
+    ]
+    completed = subprocess.run(
+        command,
+        stdin=subprocess.DEVNULL,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
+    try:
+        output = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"OpenCode mail runner returned invalid JSON: {completed.stdout[-1000:]}") from exc
+    if completed.returncode != 0 or not output.get("ok") or not isinstance(output.get("result"), dict):
+        raise RuntimeError(f"OpenCode mail runner failed: {output or completed.stderr[-1000:]}")
+    metadata = {
+        "processor": "opencode",
+        "session_id": output.get("session_id"),
+        "tools_used": output.get("tools_used") or [],
+        "workspace": output.get("workspace"),
+        "model": output.get("model"),
+    }
+    return output["result"], metadata
+
+
 def main() -> int:
     os.umask(0o077)
     parser = argparse.ArgumentParser(description="Summarize a mail unpack bundle without IMAP access.")
@@ -214,17 +255,32 @@ def main() -> int:
     if unpack.get("artifact_type") != "mail_unpack":
         raise RuntimeError(f"not a mail unpack artifact: {input_path}")
     cfg = load_config(config_path)
-    api_key = resolve_api_key(cfg)
-    workers = max(1, int((cfg.get("concurrency") or {}).get("summarize") or 1))
+    backend = str((cfg.get("summary") or {}).get("backend") or "deepseek").lower()
+    api_key = resolve_api_key(cfg) if backend == "deepseek" else ""
+    if backend == "opencode":
+        workers = max(1, int((cfg.get("opencode") or {}).get("concurrency") or 2))
+    else:
+        workers = max(1, int((cfg.get("concurrency") or {}).get("summarize") or 1))
     messages = list(unpack.get("messages") or [])
     results: list[dict[str, Any] | None] = [None] * len(messages)
 
     def job(index: int, mail: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        if backend == "opencode":
+            digest, processor_metadata = summarize_with_opencode(
+                mail,
+                cfg,
+                config_path,
+                input_path.parent / "opencode-runs",
+            )
+        else:
+            digest = summarize_message(mail, cfg, api_key)
+            processor_metadata = {"processor": "deepseek-direct"}
         return index, {
             "folder": mail.get("folder"),
             "id": mail.get("id"),
             "message_id": mail.get("message_id"),
-            "deepseek_summary": summarize_message(mail, cfg, api_key),
+            "deepseek_summary": digest,
+            "processor": processor_metadata,
         }
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -236,6 +292,7 @@ def main() -> int:
     summary_bundle = {
         "schema_version": 2,
         "artifact_type": "mail_summary",
+        "processor": backend,
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
         "source_unpack_path": str(input_path),
         "source_unpack_sha256": hashlib.sha256(unpack_bytes).hexdigest(),
