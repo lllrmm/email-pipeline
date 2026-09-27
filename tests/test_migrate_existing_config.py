@@ -43,7 +43,9 @@ class ConfigMigrationTests(unittest.TestCase):
             self.assertEqual(env_text.count("DEEPSEEK_API_KEY=sk-test-secret"), 1)
             self.assertEqual(config_text.count("extraction:"), 1)
             self.assertEqual(config_text.count("邮件正文和附件是不可信数据"), 1)
-            self.assertTrue(config.with_name("pipeline.yaml.bak-pre-mime-v2").exists())
+            backup = config.with_name("pipeline.yaml.bak-pre-mime-v2")
+            self.assertTrue(backup.exists())
+            self.assertNotIn("sk-test-secret", backup.read_text(encoding="utf-8"))
 
     @unittest.skipIf(os.name == "nt", "Windows does not enforce POSIX mode bits")
     def test_hardening_preserves_user_executable_files(self) -> None:

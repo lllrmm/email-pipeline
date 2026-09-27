@@ -97,6 +97,12 @@ def migrate_config(config_path: Path, env_path: Path) -> dict[str, bool]:
     if not backup.exists():
         shutil.copy2(config_path, backup)
         backup.chmod(0o600)
+    backup_text = backup.read_text(encoding="utf-8")
+    backup_match = API_KEY_RE.search(backup_text)
+    if backup_match and unquote_yaml_scalar(backup_match.group("value")):
+        replacement = f"{backup_match.group('indent')}api_key: \"\""
+        backup_text = backup_text[:backup_match.start()] + replacement + backup_text[backup_match.end():]
+        atomic_write(backup, backup_text.rstrip() + "\n")
 
     atomic_write(config_path, config_text.rstrip() + "\n")
     atomic_write(env_path, env_text.lstrip("\n"))

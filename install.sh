@@ -15,11 +15,18 @@ if [[ -f "$target" ]]; then
 fi
 
 install -m 700 "$repo_dir/daily-mail-pipeline.py" "$target"
+install -m 700 "$repo_dir/unpack-mail.py" "$script_dir/unpack-mail.py"
+install -m 700 "$repo_dir/summarize-mail.py" "$script_dir/summarize-mail.py"
 install -d -m 700 "$package_dir"
 install -m 600 "$repo_dir/src/email_pipeline/__init__.py" "$package_dir/__init__.py"
 install -m 600 "$repo_dir/src/email_pipeline/mime_extract.py" "$package_dir/mime_extract.py"
 
-python3 -m py_compile "$target" "$package_dir/__init__.py" "$package_dir/mime_extract.py"
+python3 -m py_compile \
+  "$target" \
+  "$script_dir/unpack-mail.py" \
+  "$script_dir/summarize-mail.py" \
+  "$package_dir/__init__.py" \
+  "$package_dir/mime_extract.py"
 
 printf 'Installed read-only mail pipeline to %s\n' "$target"
 printf 'Existing YAML configuration was not modified.\n'

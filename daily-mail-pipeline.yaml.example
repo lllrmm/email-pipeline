@@ -11,6 +11,7 @@ scan:
 concurrency:
   mailbox_scan: 1
   imap_read: 1
+  unpack: 4
   summarize: 8
 
 throttle:

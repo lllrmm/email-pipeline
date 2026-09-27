@@ -16,17 +16,35 @@ Read-only Outlook email extraction and digest pipeline for Hermes Agent.
 ## Layout
 
 ```text
-daily-mail-pipeline.py             Production pipeline entry point
+unpack-mail.py                     IMAP + MIME + attachment normalization stage
+summarize-mail.py                  Model-only consumer of unpack.json
+daily-mail-pipeline.py             Compatibility orchestrator
 src/email_pipeline/mime_extract.py MIME and attachment extraction library
 daily-mail-pipeline.yaml.example   Configuration without credentials
 tests/                             Synthetic MIME regression tests
 ```
 
+## Stage boundary
+
+```text
+Outlook IMAP
+    -> unpack-mail.py
+    -> unpack.json + .eml + extracted text + attachments
+    -> summarize-mail.py
+    -> summary.json
+    -> daily-mail-pipeline.py compatibility merge
+    -> bundle.json
+```
+
+`unpack-mail.py` owns provider I/O and deterministic normalization. It has no
+model dependency. `summarize-mail.py` never invokes Himalaya and can be rerun
+with a different prompt or model without reading the mailbox again.
+
 ## Test
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
-python3 -m py_compile daily-mail-pipeline.py src/email_pipeline/*.py
+python3 -m py_compile daily-mail-pipeline.py unpack-mail.py summarize-mail.py src/email_pipeline/*.py
 ```
 
 The test suite never connects to a mailbox or model API.
@@ -54,6 +72,8 @@ python3 daily-mail-pipeline.py \
 
 ```text
 ~/.hermes/email/daily/YYYY-MM-DD/
+├── unpack.json
+├── summary.json
 ├── bundle.json
 ├── eml/
 ├── raw/
