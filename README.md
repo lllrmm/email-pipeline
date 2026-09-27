@@ -86,3 +86,15 @@ The installer backs up an existing pipeline as
 `daily-mail-pipeline.py.bak-pre-mime-v2`, installs the parser package, and
 compiles the deployed files. It does not alter OAuth tokens, YAML credentials,
 cron jobs, or mailbox state.
+
+For an existing deployment, migrate a literal model key and harden stored mail:
+
+```bash
+python3 tools/migrate_existing_config.py \
+  --config ~/.hermes/scripts/daily-mail-pipeline.yaml \
+  --env ~/.hermes/.env \
+  --email-root ~/.hermes/email
+```
+
+The migration creates `daily-mail-pipeline.yaml.bak-pre-mime-v2`, never prints
+the secret, and is safe to run more than once.
