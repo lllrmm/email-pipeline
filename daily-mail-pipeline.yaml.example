@@ -1,9 +1,20 @@
 api:
   base_url: "https://api.deepseek.com"
-  api_key_env: "DEEPSEEK_API_KEY"
+  api_key_env: "EMAIL_SUMMARY_DEEPSEEK_API_KEY"
 
 model:
   name: "deepseek-flash"
+
+summary:
+  backend: "opencode"
+
+opencode:
+  executable: "/home/daniel/.opencode/bin/opencode"
+  agent: "mail-analyzer"
+  model: "deepseek/deepseek-flash"
+  timeout_seconds: 600
+  runtime_root: "/home/daniel/.hermes/opencode-email-runtime"
+  himalaya_config: "/home/daniel/.config/himalaya/config.toml"
 
 scan:
   timezone: "Asia/Hong_Kong"

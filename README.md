@@ -40,6 +40,38 @@ Outlook IMAP
 model dependency. `summarize-mail.py` never invokes Himalaya and can be rerun
 with a different prompt or model without reading the mailbox again.
 
+## OpenCode single-email agent chain
+
+`opencode-mail.py` provides a fully agent-driven path for one email. The entry
+point writes only `request.json`; the OpenCode `mail-analyzer` session must call
+restricted tools to fetch the message, unpack MIME, inspect attachments and
+links, and return evidence-backed JSON.
+
+```bash
+python3 opencode-mail.py \
+  --mailbox Inbox \
+  --message-id 27329 \
+  --config ~/.hermes/scripts/daily-mail-pipeline.yaml
+```
+
+The chain uses a dedicated OpenCode HOME/config/data directory and injects the
+email-only DeepSeek credential into that process. It does not share the normal
+OpenCode Web server database or provider credentials.
+
+Available agent tools:
+
+```text
+mail_fetch
+mail_unpack
+mail_extract_attachment
+mail_extract_links
+mail_inspect_link
+```
+
+The agent has broad read/analysis capability inside its one-message workspace,
+but no generic shell, external-directory access, mailbox mutation, or browser
+session with cookies.
+
 ## Test
 
 ```bash
