@@ -25,7 +25,7 @@ class ConfigMigrationTests(unittest.TestCase):
                 "  api_key_env: DEEPSEEK_API_KEY\n"
                 "system_prompt: |\n"
                 "  你是邮件预处理器。\n"
-                "  要求:\n"
+                "  要求：\n"
                 "  - 原有规则。\n",
                 encoding="utf-8",
             )
