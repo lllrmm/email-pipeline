@@ -1,0 +1,13 @@
+[project]
+name = "hermes-email-pipeline"
+version = "0.1.0"
+description = "Read-only MIME and attachment extraction for Hermes Agent"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.31", "PyYAML>=6.0"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
