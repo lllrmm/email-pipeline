@@ -79,6 +79,11 @@ summary, compatibility bundle, and Cron stdout intentionally exclude raw mail
 paths, EML paths, attachment manifests/text paths, sizes, extraction counters,
 links, images, and attachment inventories.
 
+The public daily timeline uses one `events` array. Scheduled activities,
+deadlines, and user actions are distinguished by `kind` (`scheduled`,
+`deadline`, or `action`) instead of being split across separate top-level
+arrays.
+
 ## Test
 
 ```bash

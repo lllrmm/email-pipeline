@@ -20,6 +20,7 @@ class DailyAggregationTests(unittest.TestCase):
             "links": [{"url": "https://secret.example"}],
             "raw_path": "/private/mail.txt",
             "events": [{
+                "kind": "scheduled",
                 "title": "Event",
                 "start": "2026-10-01T10:00:00+08:00",
                 "end": None,
@@ -32,9 +33,19 @@ class DailyAggregationTests(unittest.TestCase):
                     "raw_path": "/private/mail.txt",
                 }],
             }],
-            "deadlines": [],
-            "actions": [],
-            "urgent_items": [],
+            "deadlines": [{
+                "what": "Apply",
+                "date": "2026-10-02",
+                "time": "23:59",
+                "confidence": "high",
+                "source_messages": [{"folder": "Inbox", "id": "42", "subject": "Subject"}],
+            }],
+            "actions": [{
+                "what": "Prepare documents",
+                "due": "2026-10-01",
+                "priority": "high",
+                "source_messages": [{"folder": "Inbox", "id": "42", "subject": "Subject"}],
+            }],
             "warnings": [],
             "messages_total": 1,
             "messages_requiring_review": 0,
@@ -42,7 +53,10 @@ class DailyAggregationTests(unittest.TestCase):
 
         self.assertNotIn("links", result)
         self.assertNotIn("raw_path", result)
+        self.assertNotIn("deadlines", result)
+        self.assertNotIn("actions", result)
         self.assertNotIn("attachments", result["events"][0])
+        self.assertEqual([item["kind"] for item in result["events"]], ["scheduled", "deadline", "action"])
         self.assertEqual(
             result["events"][0]["source_messages"][0],
             {"folder": "Inbox", "id": "42", "subject": "Subject"},

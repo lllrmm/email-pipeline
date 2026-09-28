@@ -56,26 +56,18 @@ Required output schema:
   "summary": "1-3 Chinese sentences",
   "events": [
     {
+      "kind": "scheduled|deadline|action",
       "title": "event title",
       "start": "ISO 8601, source text, or null",
       "end": "ISO 8601, source text, or null",
+      "due": "ISO 8601, source text, or null",
       "timezone": "timezone or null",
       "location": "location or null",
+      "priority": "high|medium|low",
       "confidence": "high|medium|low",
       "evidence": [{"source": "body|attachment", "ref": "source id", "quote": "short evidence"}]
     }
   ],
-  "deadlines": [
-    {
-      "what": "deadline description",
-      "date": "ISO date or source text",
-      "time": "time or null",
-      "timezone": "timezone or null",
-      "confidence": "high|medium|low",
-      "evidence": [{"source": "body|attachment", "ref": "source id", "quote": "short evidence"}]
-    }
-  ],
-  "action_required": "action or null",
   "links": [{"text": "label", "url": "URL", "purpose": "purpose or null"}],
   "conflicts": ["conflict description"],
   "warnings": ["warning description"],

@@ -86,10 +86,7 @@ def materialize_bundle(
         daily_summary = {
             "date": unpack.get("date"),
             "overview": "摘要阶段未运行。",
-            "urgent_items": [],
             "events": [],
-            "deadlines": [],
-            "actions": [],
             "warnings": ["summary_disabled"],
             "messages_total": unpack.get("messages_total", 0),
             "messages_requiring_review": unpack.get("messages_total", 0),

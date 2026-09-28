@@ -91,27 +91,70 @@ def source_messages(value: Any) -> list[dict[str, Any]]:
 
 
 def normalize_daily_summary(value: dict[str, Any]) -> dict[str, Any]:
-    def rows(name: str, fields: tuple[str, ...]) -> list[dict[str, Any]]:
-        raw = value.get(name)
-        if not isinstance(raw, list):
-            return []
-        output = []
-        for item in raw:
+    events: list[dict[str, Any]] = []
+    raw_events = value.get("events")
+    if isinstance(raw_events, list):
+        for item in raw_events:
             if not isinstance(item, dict):
                 continue
-            row = {field: item.get(field) for field in fields}
-            row["source_messages"] = source_messages(item.get("source_messages"))
-            output.append(row)
-        return output
+            events.append({
+                "kind": item.get("kind") if item.get("kind") in {"scheduled", "deadline", "action"} else "scheduled",
+                "title": item.get("title"),
+                "start": item.get("start"),
+                "end": item.get("end"),
+                "due": item.get("due"),
+                "timezone": item.get("timezone"),
+                "location": item.get("location"),
+                "priority": item.get("priority") or "medium",
+                "confidence": item.get("confidence") or "medium",
+                "source_messages": source_messages(item.get("source_messages")),
+            })
+
+    # Backward compatibility: normalize old model output into the event timeline.
+    raw_deadlines = value.get("deadlines")
+    if isinstance(raw_deadlines, list):
+        for item in raw_deadlines:
+            if not isinstance(item, dict):
+                continue
+            date = item.get("date")
+            time_value = item.get("time")
+            due = f"{date}T{time_value}" if date and time_value else date
+            events.append({
+                "kind": "deadline",
+                "title": item.get("what") or item.get("title"),
+                "start": None,
+                "end": None,
+                "due": due,
+                "timezone": item.get("timezone"),
+                "location": None,
+                "priority": item.get("priority") or "high",
+                "confidence": item.get("confidence") or "medium",
+                "source_messages": source_messages(item.get("source_messages")),
+            })
+
+    raw_actions = value.get("actions")
+    if isinstance(raw_actions, list):
+        for item in raw_actions:
+            if not isinstance(item, dict):
+                continue
+            events.append({
+                "kind": "action",
+                "title": item.get("what") or item.get("title"),
+                "start": None,
+                "end": None,
+                "due": item.get("due"),
+                "timezone": item.get("timezone"),
+                "location": None,
+                "priority": item.get("priority") or "medium",
+                "confidence": item.get("confidence") or "medium",
+                "source_messages": source_messages(item.get("source_messages")),
+            })
 
     warnings = value.get("warnings")
     return {
         "date": value.get("date"),
         "overview": str(value.get("overview") or ""),
-        "urgent_items": rows("urgent_items", ("title", "reason")),
-        "events": rows("events", ("title", "start", "end", "timezone", "location", "confidence")),
-        "deadlines": rows("deadlines", ("what", "date", "time", "timezone", "confidence")),
-        "actions": rows("actions", ("what", "due", "priority")),
+        "events": events,
         "warnings": [str(item) for item in warnings] if isinstance(warnings, list) else [],
         "messages_total": int(value.get("messages_total") or 0),
         "messages_requiring_review": int(value.get("messages_requiring_review") or 0),

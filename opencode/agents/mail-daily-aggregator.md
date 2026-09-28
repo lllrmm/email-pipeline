@@ -21,7 +21,7 @@ permission:
 
 Read `individual-results.json`. It contains already-analyzed emails for one day.
 
-Produce one compact daily digest. Merge duplicate events and deadlines across emails. Preserve conflicts and uncertainty. Do not include URLs, filesystem paths, attachment metadata, tool traces, session identifiers, raw email text, or evidence quotes.
+Produce one compact daily digest. Merge duplicate scheduled events, deadlines, and actions into one event timeline. Preserve conflicts and uncertainty. Do not include URLs, filesystem paths, attachment metadata, tool traces, session identifiers, raw email text, or evidence quotes.
 
 Return exactly one JSON object without Markdown:
 
@@ -29,39 +29,17 @@ Return exactly one JSON object without Markdown:
 {
   "date": "YYYY-MM-DD",
   "overview": "Chinese daily overview",
-  "urgent_items": [
-    {
-      "title": "item",
-      "reason": "why urgent",
-      "source_messages": [{"folder": "Inbox", "id": "42", "subject": "subject"}]
-    }
-  ],
   "events": [
     {
+      "kind": "scheduled|deadline|action",
       "title": "event",
       "start": "ISO 8601, source text, or null",
       "end": "ISO 8601, source text, or null",
+      "due": "ISO 8601, source text, or null",
       "timezone": "timezone or null",
       "location": "location or null",
-      "confidence": "high|medium|low",
-      "source_messages": [{"folder": "Inbox", "id": "42", "subject": "subject"}]
-    }
-  ],
-  "deadlines": [
-    {
-      "what": "deadline",
-      "date": "date",
-      "time": "time or null",
-      "timezone": "timezone or null",
-      "confidence": "high|medium|low",
-      "source_messages": [{"folder": "Inbox", "id": "42", "subject": "subject"}]
-    }
-  ],
-  "actions": [
-    {
-      "what": "action",
-      "due": "date/time or null",
       "priority": "high|medium|low",
+      "confidence": "high|medium|low",
       "source_messages": [{"folder": "Inbox", "id": "42", "subject": "subject"}]
     }
   ],

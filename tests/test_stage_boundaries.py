@@ -74,10 +74,7 @@ class StageBoundaryTests(unittest.TestCase):
                 "daily_summary": {
                     "date": "2026-09-25",
                     "overview": "Test summary",
-                    "urgent_items": [],
                     "events": [],
-                    "deadlines": [],
-                    "actions": [],
                     "warnings": [],
                     "messages_total": 1,
                     "messages_requiring_review": 0,
