@@ -73,7 +73,7 @@ python3 summarize-mail-agentic.py \
   --pipeline-id <pipeline_id> \
   --mail-dir ~/.hermes/email/daily/2026-09-25/emails/<pipeline_id> \
   --output ~/.hermes/email/daily/2026-09-25/emails/<pipeline_id>/summary.json \
-  --config ~/.hermes/scripts/daily-mail-pipeline.toml
+  --config ~/.hermes/scripts/email-pipeline/daily-mail-pipeline.toml
 ```
 
 The chain uses a dedicated OpenCode HOME/config/data directory and injects the
@@ -211,7 +211,7 @@ For an existing deployment, migrate a literal model key and harden stored mail:
 
 ```bash
 python3 tools/migrate_existing_config.py \
-  --config ~/.hermes/scripts/daily-mail-pipeline.toml \
+  --config ~/.hermes/scripts/email-pipeline/daily-mail-pipeline.toml \
   --env ~/.hermes/.env \
   --email-root ~/.hermes/email
 ```

@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/.hermes/hermes-agent/venv/bin/python %h/.hermes/scripts/consume_mail_queue.py
+ExecStart=%h/.hermes/hermes-agent/venv/bin/python %h/.hermes/scripts/email-pipeline/consume_mail_queue.py
 Restart=always
 RestartSec=15
 Environment=PYTHONUNBUFFERED=1

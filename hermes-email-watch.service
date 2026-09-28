@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/.hermes/hermes-agent/venv/bin/python %h/.hermes/scripts/watch_mails.py
+ExecStart=%h/.hermes/hermes-agent/venv/bin/python %h/.hermes/scripts/email-pipeline/watch_mails.py
 Restart=always
 RestartSec=15
 Environment=PYTHONUNBUFFERED=1

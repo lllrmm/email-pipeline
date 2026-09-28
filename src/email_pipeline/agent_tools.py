@@ -117,7 +117,7 @@ def command_fetch(workspace: Path) -> dict[str, Any]:
         for attempt in range(3):
             try:
                 hermes_home = Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
-                config_path = hermes_home / "scripts" / CONFIG_FILENAME
+                config_path = hermes_home / "scripts" / "email-pipeline" / CONFIG_FILENAME
                 config = load_config(config_path)
                 data = fetch_raw(config, folder, int(uidvalidity), int(uid))
                 secure_write_bytes(eml_path, data)
