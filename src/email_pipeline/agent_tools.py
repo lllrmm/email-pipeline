@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import ipaddress
 import json
@@ -76,7 +77,9 @@ def normalize_sent_at(value: str) -> str | None:
         parsed = parsedate_to_datetime(value)
     except (TypeError, ValueError, OverflowError):
         return value
-    return parsed.isoformat()
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def persist_message_metadata(index: MailIdentityIndex, pipeline_id: str, data: bytes) -> None:

@@ -68,7 +68,10 @@ def event_mails(client, changes: dict[str, tuple[int, int, int]]) -> list[dict]:
             header = BytesParser(policy=policy.default).parsebytes(response_bytes(fetched[int(uid)]), headersonly=True)
             rfc = normalize_rfc_message_id(str(header.get("Message-ID") or ""))
             try:
-                sent_at = parsedate_to_datetime(str(header.get("Date") or "")).isoformat()
+                value = parsedate_to_datetime(str(header.get("Date") or ""))
+                if value.tzinfo is None:
+                    value = value.replace(tzinfo=dt.timezone.utc)
+                sent_at = value.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")
             except Exception:
                 sent_at = None
             mails.append({"rfc_message_id": rfc, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "sent_at": sent_at})

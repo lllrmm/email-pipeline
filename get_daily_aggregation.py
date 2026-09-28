@@ -134,7 +134,7 @@ def main() -> int:
 
     config_path = args.config.expanduser().resolve()
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    timezone = ZoneInfo(str((config.get("scan") or {}).get("timezone") or "Asia/Hong_Kong"))
+    timezone = ZoneInfo("UTC")
     target_date = args.date or dt.datetime.now(timezone).date().isoformat()
     dt.date.fromisoformat(target_date)
     identity = config.get("identity") or {}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Scan a time range and enqueue emails that still require summarization."""
 from __future__ import annotations
-import argparse,json,os,subprocess,sys
+import argparse,datetime as dt,json,os,subprocess,sys
 from pathlib import Path
 from typing import Any
 import yaml
@@ -26,13 +26,18 @@ def enqueue_scan_log(path:Path,config_path:Path)->dict[str,Any]:
         else: skipped+=1
     return {"date":log.get("date"),"messages_total":len(log.get("mails") or []),"queued":queued,"skipped":skipped,"mailboxes_total":log.get("mailboxes_total"),"mailboxes_failed":log.get("mailboxes_failed") or []}
 def main()->int:
-    os.umask(0o077); p=argparse.ArgumentParser(); p.add_argument("--date"); p.add_argument("--from",dest="date_from"); p.add_argument("--to",dest="date_to"); p.add_argument("--mailbox",action="append"); p.add_argument("--limit-per-mailbox",type=int,default=200); p.add_argument("--config",type=Path,default=DEFAULT_CONFIG); p.add_argument("--output-root",type=Path,default=DEFAULT_OUTPUT_ROOT); p.add_argument("--scan-log",type=Path); a=p.parse_args(); config=a.config.expanduser().resolve()
+    os.umask(0o077); p=argparse.ArgumentParser(); p.add_argument("--date"); p.add_argument("--from",dest="date_from"); p.add_argument("--to",dest="date_to"); p.add_argument("--from-time"); p.add_argument("--to-time"); p.add_argument("--mailbox",action="append"); p.add_argument("--limit-per-mailbox",type=int,default=200); p.add_argument("--config",type=Path,default=DEFAULT_CONFIG); p.add_argument("--output-root",type=Path,default=DEFAULT_OUTPUT_ROOT); p.add_argument("--scan-log",type=Path); a=p.parse_args(); config=a.config.expanduser().resolve()
     try:
         if a.scan_log: paths=[a.scan_log.expanduser().resolve()]
         else:
             cmd=[sys.executable,str(SCRIPT_DIR/"scan_mails.py"),"--config",str(config),"--output-root",str(a.output_root.expanduser()),"--limit-per-mailbox",str(a.limit_per_mailbox)]
-            for flag,val in (("--date",a.date),("--from",a.date_from),("--to",a.date_to)):
-                if val: cmd.extend([flag,val])
+            if a.from_time or a.to_time:
+                if not a.from_time or not a.to_time: raise RuntimeError("--from-time and --to-time must be provided together")
+                from_time,to_time=a.from_time,a.to_time
+            else:
+                first=dt.date.fromisoformat(a.date_from or a.date or dt.datetime.now(dt.timezone.utc).date().isoformat()); last=dt.date.fromisoformat(a.date_to or a.date or first.isoformat())
+                from_time=f"{first.isoformat()}T00:00:00Z"; to_time=f"{(last+dt.timedelta(days=1)).isoformat()}T00:00:00Z"
+            cmd.extend(["--from-time",from_time,"--to-time",to_time])
             for mailbox in a.mailbox or []: cmd.extend(["--mailbox",mailbox])
             result=run_stage(cmd); paths=[Path(item["scan_log_path"]) for item in result.get("per_day") or []] if result.get("mode")=="range" else [Path(result["scan_log_path"])]
         per_day=[enqueue_scan_log(path,config) for path in paths]; print(json.dumps({"ok":True,"mode":"range" if len(per_day)>1 else "single","per_day":per_day},ensure_ascii=False,indent=2)); return 0

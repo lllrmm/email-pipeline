@@ -11,7 +11,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -37,9 +36,9 @@ def stop(*_args) -> None:
 def event_day(event: dict, timezone_name: str) -> str:
     try:
         value = dt.datetime.fromisoformat(str(event.get("sent_at") or "").replace("Z", "+00:00"))
-        return value.astimezone(ZoneInfo(timezone_name)).date().isoformat()
+        return value.astimezone(dt.timezone.utc).date().isoformat()
     except Exception:
-        return dt.datetime.now(ZoneInfo(timezone_name)).date().isoformat()
+        return dt.datetime.now(dt.timezone.utc).date().isoformat()
 
 
 def write_scan_log(events: list[dict], timezone_name: str) -> Path:
