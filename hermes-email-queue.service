@@ -1,0 +1,14 @@
+[Unit]
+Description=Hermes durable new-mail queue consumer
+After=network-online.target hermes-email-watch.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.hermes/hermes-agent/venv/bin/python %h/.hermes/scripts/consume_mail_queue.py
+Restart=always
+RestartSec=15
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

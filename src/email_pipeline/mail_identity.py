@@ -123,6 +123,24 @@ class MailIdentityIndex:
                     ON email_metadata(sender);
                 CREATE INDEX IF NOT EXISTS idx_email_metadata_subject
                     ON email_metadata(subject);
+                CREATE TABLE IF NOT EXISTS email_event_queue (
+                    queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    account TEXT NOT NULL,
+                    rfc_message_id TEXT NOT NULL,
+                    folder TEXT NOT NULL,
+                    uidvalidity INTEGER NOT NULL,
+                    imap_uid INTEGER NOT NULL,
+                    detected_at TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'done')),
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    claimed_at TEXT,
+                    completed_at TEXT,
+                    pipeline_id TEXT,
+                    last_error TEXT,
+                    UNIQUE(account, folder, uidvalidity, imap_uid)
+                );
+                CREATE INDEX IF NOT EXISTS idx_email_event_queue_status
+                    ON email_event_queue(status, queue_id);
                 """
             )
             columns = {
@@ -370,6 +388,62 @@ class MailIdentityIndex:
             )
             if cursor.rowcount != 1:
                 raise KeyError(f"unknown pipeline id: {pipeline_id}")
+            connection.commit()
+
+    def enqueue_event(self, *, account: str, rfc_message_id: str, folder: str, uidvalidity: int, uid: int) -> bool:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        rfc_message_id = normalize_rfc_message_id(rfc_message_id)
+        with closing(self.connect()) as connection:
+            cursor = connection.execute(
+                """INSERT INTO email_event_queue
+                (account, rfc_message_id, folder, uidvalidity, imap_uid, detected_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(account, folder, uidvalidity, imap_uid) DO NOTHING""",
+                (account, rfc_message_id, folder, int(uidvalidity), int(uid), now),
+            )
+            connection.commit()
+        return cursor.rowcount == 1
+
+    def claim_events(self, limit: int = 20, stale_seconds: int = 900) -> list[dict[str, Any]]:
+        now = dt.datetime.now(dt.timezone.utc)
+        stale = (now - dt.timedelta(seconds=stale_seconds)).isoformat()
+        with closing(self.connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "UPDATE email_event_queue SET status='pending', claimed_at=NULL WHERE status='processing' AND claimed_at<?",
+                (stale,),
+            )
+            rows = connection.execute(
+                "SELECT * FROM email_event_queue WHERE status='pending' AND attempts<5 ORDER BY queue_id LIMIT ?",
+                (max(1, int(limit)),),
+            ).fetchall()
+            ids = [int(row["queue_id"]) for row in rows]
+            if ids:
+                placeholders = ",".join("?" for _ in ids)
+                connection.execute(
+                    f"UPDATE email_event_queue SET status='processing', attempts=attempts+1, claimed_at=?, last_error=NULL WHERE queue_id IN ({placeholders})",
+                    (now.isoformat(), *ids),
+                )
+            connection.commit()
+        return [dict(row) for row in rows]
+
+    def complete_events(self, queue_ids: list[int], pipeline_ids: dict[int, str]) -> None:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with closing(self.connect()) as connection:
+            for queue_id in queue_ids:
+                connection.execute(
+                    "UPDATE email_event_queue SET status='done', completed_at=?, pipeline_id=? WHERE queue_id=?",
+                    (now, pipeline_ids.get(queue_id), int(queue_id)),
+                )
+            connection.commit()
+
+    def retry_events(self, queue_ids: list[int], error: str) -> None:
+        with closing(self.connect()) as connection:
+            for queue_id in queue_ids:
+                connection.execute(
+                    "UPDATE email_event_queue SET status='pending', claimed_at=NULL, last_error=? WHERE queue_id=?",
+                    (error[:1000], int(queue_id)),
+                )
             connection.commit()
 
     def lookup_pipeline_id(self, pipeline_id: str) -> dict[str, Any] | None:
