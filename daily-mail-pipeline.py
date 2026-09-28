@@ -15,11 +15,6 @@ from typing import Any
 import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
-    if str(candidate) not in sys.path:
-        sys.path.insert(0, str(candidate))
-
-from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 
 DEFAULT_CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes" / "email" / "daily"
@@ -42,43 +37,25 @@ def run_stage(command: list[str]) -> dict[str, Any]:
     return result
 
 
-def partition_summary_work(day_dir: Path, pipeline_ids: list[str]) -> tuple[list[str], list[str]]:
-    pending: list[str] = []
-    reused: list[str] = []
-    for pipeline_id in pipeline_ids:
-        mail_dir = day_dir / "emails" / pipeline_id
-        request_path = mail_dir / "request.json"
-        if not request_path.is_file():
-            raise RuntimeError(f"request.json missing: {pipeline_id}")
-        request = json.loads(request_path.read_text(encoding="utf-8"))
-        if request.get("pipeline_id") != pipeline_id:
-            raise RuntimeError(f"request.json does not match pipeline id: {pipeline_id}")
-        database_path = request.get("index_database")
-        if not database_path:
-            raise RuntimeError(f"index database missing from request: {pipeline_id}")
-        identity = MailIdentityIndex(Path(database_path)).lookup_pipeline_id(pipeline_id)
-        if identity is None:
-            raise RuntimeError(f"pipeline id is absent from database: {pipeline_id}")
-        if identity.get("summarized") is not True:
-            pending.append(pipeline_id)
-            continue
-        summary_path = mail_dir / "summary.json"
-        if not summary_path.is_file():
-            raise RuntimeError(f"database says summarized but summary.json is missing: {pipeline_id}")
-        artifact = json.loads(summary_path.read_text(encoding="utf-8"))
-        if artifact.get("pipeline_id") != pipeline_id or not isinstance(artifact.get("analysis"), dict):
-            raise RuntimeError(f"database says summarized but summary.json is invalid: {pipeline_id}")
-        reused.append(pipeline_id)
-    return pending, reused
+def summary_partition_from_scan_log(scan_log: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
+    included = list(scan_log.get("included_pipeline_ids") or [])
+    pending = list(scan_log.get("pending_summary_pipeline_ids") or [])
+    reused = list(scan_log.get("reused_summary_pipeline_ids") or [])
+    if len(included) != len(set(included)):
+        raise RuntimeError("scan log contains duplicate included pipeline IDs")
+    if set(pending) & set(reused):
+        raise RuntimeError("scan log marks a pipeline ID as both pending and reused")
+    if set(pending) | set(reused) != set(included):
+        raise RuntimeError("scan log summary partition does not match included pipeline IDs")
+    return included, pending, reused
 
 
 def run_agentic_summaries(scan_log_path: Path, config_path: Path) -> tuple[Path, int, int]:
     scan_log = json.loads(scan_log_path.read_text(encoding="utf-8"))
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     workers = max(1, int((config.get("opencode") or {}).get("concurrency") or 8))
-    pipeline_ids = list(scan_log.get("included_pipeline_ids") or [])
+    pipeline_ids, pending_ids, reused_ids = summary_partition_from_scan_log(scan_log)
     day_dir = scan_log_path.parent.parent
-    pending_ids, reused_ids = partition_summary_work(day_dir, pipeline_ids)
     completed_ids: list[str | None] = [None] * len(pending_ids)
 
     def job(position: int, pipeline_id: str) -> tuple[int, str]:

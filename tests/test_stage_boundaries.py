@@ -35,13 +35,16 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('"--output"', source)
         self.assertIn('get("concurrency") or 8', source)
 
-    def test_incremental_skip_logic_belongs_to_orchestrator(self) -> None:
+    def test_incremental_skip_logic_belongs_to_scanner(self) -> None:
+        scanner = (ROOT / "scan_mails.py").read_text(encoding="utf-8")
         orchestrator = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
+        indexer = (ROOT / "index_mail.py").read_text(encoding="utf-8")
         summarizer = (ROOT / "summarize-mail-agentic.py").read_text(encoding="utf-8")
 
-        self.assertIn("partition_summary_work", orchestrator)
-        self.assertIn('identity.get("summarized") is not True', orchestrator)
-        self.assertNotIn("partition_summary_work", summarizer)
+        self.assertIn("classify_summary_state", scanner)
+        self.assertIn('identity.get("summarized") is not True', scanner)
+        self.assertNotIn('identity.get("summarized")', orchestrator)
+        self.assertNotIn('identity.get("summarized")', indexer)
         self.assertNotIn('identity.get("summarized")', summarizer)
 
     def test_agentic_output_path_is_caller_selected_inside_workspace(self) -> None:
@@ -115,8 +118,8 @@ class StageBoundaryTests(unittest.TestCase):
 
             self.assertEqual(daily_summary["overview"], "Test summary")
 
-    def test_orchestrator_reuses_database_summarized_messages(self) -> None:
-        orchestrator = load_script("daily_orchestrator_incremental", ROOT / "daily-mail-pipeline.py")
+    def test_scanner_reuses_database_summarized_messages(self) -> None:
+        scanner = load_script("scan_mails_incremental", ROOT / "scan_mails.py")
         with tempfile.TemporaryDirectory() as temp_dir:
             day_dir = Path(temp_dir) / "2026-09-28"
             pipeline_id = "a" * 64
@@ -143,13 +146,12 @@ class StageBoundaryTests(unittest.TestCase):
             }), encoding="utf-8")
             index.set_summarized(pipeline_id)
 
-            pending, reused = orchestrator.partition_summary_work(day_dir, [pipeline_id])
+            state = scanner.classify_summary_state(database, day_dir, pipeline_id)
 
-            self.assertEqual(pending, [])
-            self.assertEqual(reused, [pipeline_id])
+            self.assertEqual(state, "reused")
 
     def test_summarized_database_state_requires_summary_artifact(self) -> None:
-        orchestrator = load_script("daily_orchestrator_consistency", ROOT / "daily-mail-pipeline.py")
+        scanner = load_script("scan_mails_consistency", ROOT / "scan_mails.py")
         with tempfile.TemporaryDirectory() as temp_dir:
             day_dir = Path(temp_dir) / "2026-09-28"
             pipeline_id = "b" * 64
@@ -173,7 +175,22 @@ class StageBoundaryTests(unittest.TestCase):
             index.set_summarized(pipeline_id)
 
             with self.assertRaisesRegex(RuntimeError, "summary.json is missing"):
-                orchestrator.partition_summary_work(day_dir, [pipeline_id])
+                scanner.classify_summary_state(database, day_dir, pipeline_id)
+
+    def test_orchestrator_consumes_scan_log_summary_partition(self) -> None:
+        orchestrator = load_script("daily_orchestrator_partition", ROOT / "daily-mail-pipeline.py")
+        included = ["a" * 64, "b" * 64]
+        scan_log = {
+            "included_pipeline_ids": included,
+            "pending_summary_pipeline_ids": [included[1]],
+            "reused_summary_pipeline_ids": [included[0]],
+        }
+
+        actual_included, pending, reused = orchestrator.summary_partition_from_scan_log(scan_log)
+
+        self.assertEqual(actual_included, included)
+        self.assertEqual(pending, [included[1]])
+        self.assertEqual(reused, [included[0]])
 
 
 if __name__ == "__main__":

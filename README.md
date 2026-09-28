@@ -17,6 +17,7 @@ Read-only Outlook email extraction and digest pipeline for Hermes Agent.
 
 ```text
 scan_mails.py                      Envelope scan + stable identity/workspace index
+index_mail.py                      Register one envelope in SQLite and its workspace
 mail-index.py                      pipeline_id / RFC Message-ID lookup CLI
 summarize-mail-agentic.py          One pipeline_id + workdir + JSON output
 daily-mail-pipeline.py             Compatibility orchestrator
@@ -30,20 +31,25 @@ tests/                             Synthetic MIME regression tests
 ```text
 Outlook envelope metadata
     -> scan_mails.py
+    -> index_mail.py registers each envelope
     -> scan-log/scan-<generated UTC time>.json + emails/<pipeline_id>/request.json
     -> daily-mail-pipeline.py calls summarize-mail-agentic.py per pipeline_id
     -> aggregation/aggregation-<generated UTC time>.json
 ```
 
-`scan_mails.py` never reads message bodies or unpacks MIME. The single-email
+`scan_mails.py` owns mailbox scanning and incremental summary classification.
+`index_mail.py` only registers one envelope in SQLite and creates its fixed
+workspace request; it does not inspect summarized state. Neither script reads
+message bodies or unpacks MIME. The single-email
 OpenCode agent owns `mail_fetch`, `mail_unpack`, attachment extraction, and
 link inspection inside `emails/<pipeline_id>/`.
 
-Incremental execution is owned by `daily-mail-pipeline.py`, not by the
-single-email summarizer. The orchestrator reuses a valid `summary.json` whenever
-SQLite already has `summarized=true`; only unsummarized pipeline IDs invoke
-`summarize-mail-agentic.py`. Daily aggregation still includes every pipeline ID
-from the current scan, so later runs produce complete snapshots.
+Incremental classification is owned by `scan_mails.py`. It records
+`pending_summary_pipeline_ids` and `reused_summary_pipeline_ids` in the scan
+log. `daily-mail-pipeline.py` consumes those lists without querying SQLite;
+only pending IDs invoke `summarize-mail-agentic.py`. Daily aggregation still
+includes every pipeline ID from the current scan, so later runs produce
+complete snapshots.
 
 ## OpenCode single-email agent chain
 
@@ -106,7 +112,7 @@ or convert fields.
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
-python3 -m py_compile daily-mail-pipeline.py scan_mails.py summarize-mail-agentic.py src/email_pipeline/*.py
+python3 -m py_compile daily-mail-pipeline.py scan_mails.py index_mail.py summarize-mail-agentic.py src/email_pipeline/*.py
 ```
 
 The test suite never connects to a mailbox or model API.

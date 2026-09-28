@@ -9,15 +9,19 @@ from pathlib import Path
 from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("scan_mails", ROOT / "scan_mails.py")
-assert SPEC and SPEC.loader
-INDEX_MAIL = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(INDEX_MAIL)
+SCAN_SPEC = importlib.util.spec_from_file_location("scan_mails", ROOT / "scan_mails.py")
+assert SCAN_SPEC and SCAN_SPEC.loader
+SCAN_MAILS = importlib.util.module_from_spec(SCAN_SPEC)
+SCAN_SPEC.loader.exec_module(SCAN_MAILS)
+INDEX_SPEC = importlib.util.spec_from_file_location("index_mail", ROOT / "index_mail.py")
+assert INDEX_SPEC and INDEX_SPEC.loader
+INDEX_MAIL = importlib.util.module_from_spec(INDEX_SPEC)
+INDEX_SPEC.loader.exec_module(INDEX_MAIL)
 
 
 class MailIdentityTests(unittest.TestCase):
     def test_scan_log_filename_uses_generated_utc_time(self) -> None:
-        filename = INDEX_MAIL.scan_log_filename("2026-09-28T10:04:35.098404Z")
+        filename = SCAN_MAILS.scan_log_filename("2026-09-28T10:04:35.098404Z")
 
         self.assertEqual(filename, "scan-20260928T100435.098404Z.json")
 
@@ -70,14 +74,42 @@ class MailIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             with self.assertRaisesRegex(RuntimeError, "RFC Message-ID missing"):
-                INDEX_MAIL.process_message(
+                INDEX_MAIL.register_mail(
                     "Inbox",
                     {"id": "42", "subject": "No id", "date": "2026-09-28T00:00:00Z"},
                     root,
                     account="outlook",
                     salt=b"x" * 32,
-                    index_path=root / "index.sqlite3",
+                    database_path=root / "index.sqlite3",
+                    observed_date="2026-09-28",
                 )
+
+    def test_index_mail_registers_one_envelope(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            database = root / "index.sqlite3"
+            result = INDEX_MAIL.register_mail(
+                "Inbox",
+                {
+                    "id": "42",
+                    "message-id": "<registered@example.com>",
+                    "subject": "Registered",
+                    "date": "2026-09-28T00:00:00Z",
+                    "from": {"name": "Sender", "addr": "sender@example.com"},
+                },
+                root / "2026-09-28",
+                account="outlook",
+                salt=b"x" * 32,
+                database_path=database,
+                observed_date="2026-09-28",
+            )
+
+            identity = MailIdentityIndex(database).lookup_pipeline_id(result["pipeline_id"])
+            request_path = Path(result["mail_dir"]) / "request.json"
+
+            self.assertEqual(identity["rfc_message_id"], "<registered@example.com>")
+            self.assertEqual(identity["metadata"]["subject"], "Registered")
+            self.assertTrue(request_path.is_file())
 
     def test_salted_id_is_stable_and_index_is_bidirectional(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

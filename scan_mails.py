@@ -34,11 +34,8 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
         sys.path.insert(0, str(candidate))
 
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
-from email_pipeline.mail_identity import (  # noqa: E402
-    MailIdentityIndex,
-    get_or_create_salt,
-    make_pipeline_id,
-)
+from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt  # noqa: E402
+from index_mail import register_mail  # noqa: E402
 
 # Ensure user-local binaries (himalaya lives in ~/.local/bin) are reachable
 # regardless of how the script is invoked (cron, non-interactive SSH, etc.).
@@ -167,23 +164,6 @@ def safe_name(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("_")[:80] or "mailbox"
 
 
-def envelope_address_text(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value.strip() or None
-    if isinstance(value, list):
-        rendered = [envelope_address_text(item) for item in value]
-        return ", ".join(item for item in rendered if item) or None
-    if isinstance(value, dict):
-        name = str(value.get("name") or "").strip()
-        address = str(value.get("addr") or value.get("address") or value.get("email") or "").strip()
-        if name and address:
-            return f"{name} <{address}>"
-        return address or name or None
-    return str(value).strip() or None
-
-
 def envelope_local_date(env: dict[str, Any], tz: ZoneInfo) -> str | None:
     raw = env.get("date")
     if not raw:
@@ -216,62 +196,20 @@ def load_config(path: Path) -> dict[str, Any]:
     return cfg
 
 
-# ---------------------------------------------------------------------------
-# Main pipeline
-# ---------------------------------------------------------------------------
-
-def process_message(
-    folder: str,
-    env: dict[str, Any],
-    day_dir: Path,
-    *,
-    account: str,
-    salt: bytes,
-    index_path: Path,
-) -> dict[str, Any]:
-    """Create a stable identity, database location, and fixed workspace."""
-    msg_id = str(env.get("id"))
-    observed_date = envelope_local_date(env, dt.datetime.now().astimezone().tzinfo) or str(env.get("date") or "")[:10]
-    rfc_message_id = str(env.get("message-id") or "").strip() or None
-    if not rfc_message_id:
-        raise RuntimeError(f"RFC Message-ID missing for envelope {folder}/{msg_id}")
-    identity_source = "rfc_message_id"
-    pipeline_id = make_pipeline_id(salt, rfc_message_id)
-    index = MailIdentityIndex(index_path)
-    index.record(
-        pipeline_id=pipeline_id,
-        rfc_message_id=rfc_message_id,
-        identity_source=identity_source,
-        account=account,
-        folder=folder,
-        himalaya_id=msg_id,
-        observed_date=observed_date,
-        sent_at=str(env.get("date") or "").strip() or None,
-        subject=str(env.get("subject") or "").strip() or None,
-        sender=envelope_address_text(env.get("from")),
-    )
-
-    email_dir = day_dir / "emails" / pipeline_id
-    email_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    index.record_workspace(pipeline_id, observed_date, email_dir)
-    request_path = email_dir / "request.json"
-    request = {
-        "pipeline_id": pipeline_id,
-        "rfc_message_id": rfc_message_id,
-        "identity_source": identity_source,
-        "subject": env.get("subject"),
-        "date": env.get("date"),
-        "index_database": str(index_path),
-    }
-    secure_write_text(request_path, json.dumps(request, ensure_ascii=False, indent=2))
-    return {
-        "pipeline_id": pipeline_id,
-        "rfc_message_id": rfc_message_id,
-        "identity_source": identity_source,
-        "subject": env.get("subject"),
-        "date": env.get("date"),
-        "mail_dir": str(email_dir),
-    }
+def classify_summary_state(database_path: Path, day_dir: Path, pipeline_id: str) -> str:
+    """Return pending or reused for one registered mail."""
+    identity = MailIdentityIndex(database_path).lookup_pipeline_id(pipeline_id)
+    if identity is None:
+        raise RuntimeError(f"pipeline id is absent from database: {pipeline_id}")
+    if identity.get("summarized") is not True:
+        return "pending"
+    summary_path = day_dir / "emails" / pipeline_id / "summary.json"
+    if not summary_path.is_file():
+        raise RuntimeError(f"database says summarized but summary.json is missing: {pipeline_id}")
+    artifact = json.loads(summary_path.read_text(encoding="utf-8"))
+    if artifact.get("pipeline_id") != pipeline_id or not isinstance(artifact.get("analysis"), dict):
+        raise RuntimeError(f"database says summarized but summary.json is invalid: {pipeline_id}")
+    return "reused"
 
 
 def main() -> int:
@@ -339,6 +277,8 @@ def main() -> int:
                 "fatal_error": error,
                 "messages_total": 0,
                 "included_pipeline_ids": [],
+                "pending_summary_pipeline_ids": [],
+                "reused_summary_pipeline_ids": [],
                 "mailboxes_failed": [],
             }
             log_dir = out_dirs[day] / "scan-log"
@@ -431,13 +371,14 @@ def main() -> int:
 
     def job(item: tuple[str, int, int, dict[str, Any]]) -> tuple[str, int, int, dict[str, Any]]:
         day, fi, ei, env = item
-        mail = process_message(
+        mail = register_mail(
             mailboxes[fi],
             env,
             out_dirs[day],
             account=account_name,
             salt=salt,
-            index_path=database_path,
+            database_path=database_path,
+            observed_date=day,
         )
         with progress_lock:
             progress["done"] += 1
@@ -465,6 +406,14 @@ def main() -> int:
             if pipeline_id:
                 unique_messages[pipeline_id] = message
         pipeline_ids = list(unique_messages)
+        pending_summary_pipeline_ids: list[str] = []
+        reused_summary_pipeline_ids: list[str] = []
+        for pipeline_id in pipeline_ids:
+            state = classify_summary_state(database_path, out_dirs[d], pipeline_id)
+            if state == "pending":
+                pending_summary_pipeline_ids.append(pipeline_id)
+            else:
+                reused_summary_pipeline_ids.append(pipeline_id)
         generated_at = utc_now()
         scan_log: dict[str, Any] = {
             "schema_version": 1,
@@ -483,6 +432,8 @@ def main() -> int:
             "mailboxes_failed": mailboxes_failed_out,
             "messages_total": len(pipeline_ids),
             "included_pipeline_ids": pipeline_ids,
+            "pending_summary_pipeline_ids": pending_summary_pipeline_ids,
+            "reused_summary_pipeline_ids": reused_summary_pipeline_ids,
         }
         if range_mode:
             scan_log["backfill"] = {"from": first_day, "to": last_day, "days": len(days)}
@@ -495,6 +446,8 @@ def main() -> int:
             "date": d,
             "scan_log_path": str(scan_log_path),
             "messages_total": len(pipeline_ids),
+            "summaries_pending": len(pending_summary_pipeline_ids),
+            "summaries_reused": len(reused_summary_pipeline_ids),
         })
 
     if not range_mode:
