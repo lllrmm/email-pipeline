@@ -51,7 +51,7 @@ links, and return evidence-backed JSON.
 ```bash
 python3 summarize-mail-agentic.py \
   --pipeline-id <pipeline_id> \
-  --agent-workdir ~/.hermes/email/daily/2026-09-25/emails/<pipeline_id> \
+  --mail-dir ~/.hermes/email/daily/2026-09-25/emails/<pipeline_id> \
   --output ~/.hermes/email/daily/2026-09-25/emails/<pipeline_id>/summary.json \
   --config ~/.hermes/scripts/daily-mail-pipeline.yaml
 ```
@@ -76,18 +76,20 @@ session with cookies.
 
 After all per-email sessions finish, `mails-aggregate-agentic.py` receives the
 pipeline ID list, date work directory, and output path. The
-`mail-daily-aggregator` reads each `emails/<pipeline_id>/summary.json`, deduplicates
-events/deadlines/actions, and writes the public `aggregation.json`. The public
+`mail-daily-aggregator` reads each `emails/<pipeline_id>/summary.json`, groups
+related activity times, deadlines, and actions into one real-world event, and
+writes the public `aggregation.json`. The public
 summary, compatibility bundle, and Cron stdout intentionally exclude raw mail
 paths, EML paths, attachment manifests/text paths, sizes, extraction counters,
 links, images, and attachment inventories.
 
-The public daily timeline uses one `events` array. Scheduled activities,
-deadlines, and user actions are distinguished by `kind` (`scheduled`,
-`deadline`, or `action`) instead of being split across separate top-level
-arrays. This JSON is written exactly as returned by the daily aggregation
-agent. Python validates the schema and rejects invalid/extra fields; it does
-not delete, add, rename, or convert fields.
+The public daily timeline uses one `events` array. Each event contains its own
+`scheduled`, `deadlines`, and `actions` arrays. Every nested item has a required
+non-empty `content` description, so an activity and its
+registration deadline/action stay in the same event object. This JSON is
+written exactly as returned by the daily aggregation agent. Python validates
+the schema and rejects invalid/extra fields; it does not delete, add, rename,
+or convert fields.
 
 ## Test
 

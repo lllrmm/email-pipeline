@@ -56,16 +56,42 @@ Required output schema:
   "summary": "1-3 Chinese sentences",
   "events": [
     {
-      "kind": "scheduled|deadline|action",
       "title": "event title",
-      "start": "ISO 8601, source text, or null",
-      "end": "ISO 8601, source text, or null",
-      "due": "ISO 8601, source text, or null",
-      "timezone": "timezone or null",
-      "location": "location or null",
+      "scheduled": [
+        {
+          "content": "what happens at this time",
+          "start": "ISO 8601, source text, or null",
+          "end": "ISO 8601, source text, or null",
+          "timezone": "timezone or null",
+          "location": "location or null",
+          "confidence": "high|medium|low",
+          "evidence": [{"source": "body|attachment", "ref": "source id", "quote": "short evidence"}]
+        }
+      ],
+      "deadlines": [
+        {
+          "title": "deadline title",
+          "content": "what must be completed by the deadline",
+          "due": "ISO 8601, source text, or null",
+          "timezone": "timezone or null",
+          "priority": "high|medium|low",
+          "confidence": "high|medium|low",
+          "evidence": [{"source": "body|attachment", "ref": "source id", "quote": "short evidence"}]
+        }
+      ],
+      "actions": [
+        {
+          "title": "action title",
+          "content": "what the user should do and why",
+          "due": "ISO 8601, source text, or null",
+          "priority": "high|medium|low",
+          "confidence": "high|medium|low",
+          "evidence": [{"source": "body|attachment", "ref": "source id", "quote": "short evidence"}]
+        }
+      ],
       "priority": "high|medium|low",
       "confidence": "high|medium|low",
-      "evidence": [{"source": "body|attachment", "ref": "source id", "quote": "short evidence"}]
+      "warnings": ["event-specific warning"]
     }
   ],
   "links": [{"text": "label", "url": "URL", "purpose": "purpose or null"}],
@@ -75,3 +101,5 @@ Required output schema:
   "requires_manual_review": true
 }
 ```
+
+Every `scheduled`, `deadlines`, and `actions` item must include a concise, non-empty `content` string. Do not emit an item that only contains a time or a short label.

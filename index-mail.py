@@ -240,7 +240,7 @@ def process_message(
         "identity_source": identity_source,
         "subject": env.get("subject"),
         "date": env.get("date"),
-        "agent_workdir": str(email_dir),
+        "mail_dir": str(email_dir),
     }
 
 

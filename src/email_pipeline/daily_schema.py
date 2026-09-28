@@ -10,9 +10,12 @@ DAILY_KEYS = {
     "messages_total", "messages_requiring_review",
 }
 EVENT_KEYS = {
-    "kind", "title", "start", "end", "due", "timezone", "location",
-    "priority", "confidence", "source_messages",
+    "title", "scheduled", "deadlines", "actions", "priority", "confidence",
+    "source_messages", "warnings",
 }
+SCHEDULE_KEYS = {"content", "start", "end", "timezone", "location", "confidence"}
+DEADLINE_KEYS = {"title", "content", "due", "timezone", "priority", "confidence"}
+ACTION_KEYS = {"title", "content", "due", "priority", "confidence"}
 SOURCE_KEYS = {"pipeline_id", "subject"}
 
 
@@ -32,12 +35,28 @@ def validate_daily_summary(value: dict[str, Any]) -> None:
     for event in value["events"]:
         if not isinstance(event, dict) or set(event) != EVENT_KEYS:
             raise ValueError("event keys do not match schema")
-        if event.get("kind") not in {"scheduled", "deadline", "action"}:
-            raise ValueError(f"invalid event kind: {event.get('kind')}")
         if event.get("priority") not in {"high", "medium", "low"}:
             raise ValueError(f"invalid priority: {event.get('priority')}")
         if event.get("confidence") not in {"high", "medium", "low"}:
             raise ValueError(f"invalid confidence: {event.get('confidence')}")
+        if not isinstance(event.get("warnings"), list) or not all(isinstance(item, str) for item in event["warnings"]):
+            raise ValueError("event warnings must be an array of strings")
+        for field, keys in (
+            ("scheduled", SCHEDULE_KEYS),
+            ("deadlines", DEADLINE_KEYS),
+            ("actions", ACTION_KEYS),
+        ):
+            if not isinstance(event.get(field), list):
+                raise ValueError(f"{field} must be an array")
+            for item in event[field]:
+                if not isinstance(item, dict) or set(item) != keys:
+                    raise ValueError(f"{field} item keys do not match schema")
+                if not isinstance(item.get("content"), str) or not item["content"].strip():
+                    raise ValueError(f"{field} content must be a non-empty string")
+                if item.get("confidence") not in {"high", "medium", "low"}:
+                    raise ValueError(f"invalid {field} confidence: {item.get('confidence')}")
+                if "priority" in keys and item.get("priority") not in {"high", "medium", "low"}:
+                    raise ValueError(f"invalid {field} priority: {item.get('priority')}")
         if not isinstance(event.get("source_messages"), list):
             raise ValueError("source_messages must be an array")
         for source in event["source_messages"]:

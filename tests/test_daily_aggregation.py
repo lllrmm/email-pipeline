@@ -26,18 +26,36 @@ class DailyAggregationTests(unittest.TestCase):
             "date": "2026-09-25",
             "overview": "overview",
             "events": [{
-                "kind": "scheduled",
                 "title": "Event",
-                "start": "2026-10-01T10:00:00+08:00",
-                "end": None,
-                "timezone": "Asia/Hong_Kong",
-                "location": "HKUST",
-                "due": None,
+                "scheduled": [{
+                    "content": "Attend the event",
+                    "start": "2026-10-01T10:00:00+08:00",
+                    "end": None,
+                    "timezone": "Asia/Hong_Kong",
+                    "location": "HKUST",
+                    "confidence": "high",
+                }],
+                "deadlines": [{
+                    "title": "Registration deadline",
+                    "content": "Complete registration before the deadline",
+                    "due": "2026-09-30T23:59:00+08:00",
+                    "timezone": "Asia/Hong_Kong",
+                    "priority": "high",
+                    "confidence": "high",
+                }],
+                "actions": [{
+                    "title": "Register",
+                    "content": "Submit the event registration form",
+                    "due": "2026-09-30T23:59:00+08:00",
+                    "priority": "high",
+                    "confidence": "high",
+                }],
                 "priority": "high",
                 "confidence": "high",
                 "source_messages": [{
-                    "pipeline_id": "abc123", "subject": "Subject"
+                    "pipeline_id": "a" * 64, "subject": "Subject"
                 }],
+                "warnings": [],
             }],
             "warnings": [],
             "messages_total": 1,
@@ -47,12 +65,51 @@ class DailyAggregationTests(unittest.TestCase):
         MODULE.validate_daily_summary(result)
         self.assertEqual(result["events"][0]["title"], "Event")
 
+    def test_time_only_nested_item_is_rejected(self) -> None:
+        result = {
+            "date": "2026-09-25",
+            "overview": "overview",
+            "events": [{
+                "title": "Event",
+                "scheduled": [{
+                    "content": "",
+                    "start": "2026-10-01T10:00:00+08:00",
+                    "end": None,
+                    "timezone": "Asia/Hong_Kong",
+                    "location": "HKUST",
+                    "confidence": "high",
+                }],
+                "deadlines": [],
+                "actions": [],
+                "priority": "high",
+                "confidence": "high",
+                "source_messages": [],
+                "warnings": [],
+            }],
+            "warnings": [],
+            "messages_total": 1,
+            "messages_requiring_review": 0,
+        }
+
+        with self.assertRaisesRegex(ValueError, "content must be a non-empty string"):
+            MODULE.validate_daily_summary(result)
+
     def test_old_or_extra_fields_are_rejected_not_rewritten(self) -> None:
         invalid = {
             "date": "2026-09-25",
             "overview": "overview",
-            "events": [],
-            "deadlines": [],
+            "events": [{
+                "kind": "scheduled",
+                "title": "Old flat item",
+                "start": None,
+                "end": None,
+                "due": None,
+                "timezone": None,
+                "location": None,
+                "priority": "low",
+                "confidence": "high",
+                "source_messages": [],
+            }],
             "warnings": [],
             "messages_total": 1,
             "messages_requiring_review": 0,

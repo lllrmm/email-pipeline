@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -27,8 +28,19 @@ DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
 def secure_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path.write_text(text, encoding="utf-8")
-    path.chmod(0o600)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        os.replace(temp_name, path)
+        path.chmod(0o600)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise
 
 
 def load_config(path: Path) -> dict[str, Any]:

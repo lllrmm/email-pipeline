@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -28,8 +29,19 @@ DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
 def secure_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path.write_text(text, encoding="utf-8")
-    path.chmod(0o600)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        os.replace(temp_name, path)
+        path.chmod(0o600)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -118,7 +130,7 @@ def main() -> int:
     os.umask(0o077)
     parser = argparse.ArgumentParser(description="Analyze one indexed email with an OpenCode agent.")
     parser.add_argument("--pipeline-id", required=True)
-    parser.add_argument("--agent-workdir", required=True, type=Path)
+    parser.add_argument("--mail-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--title")
@@ -136,7 +148,7 @@ def main() -> int:
     ).expanduser().resolve()
     runtime_config = runtime_root / "config"
 
-    workspace = args.agent_workdir.expanduser().resolve()
+    workspace = args.mail_dir.expanduser().resolve()
     output_path = args.output.expanduser().resolve()
     request_path = workspace / "request.json"
     if not workspace.is_dir() or not request_path.is_file():

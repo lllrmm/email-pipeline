@@ -62,13 +62,13 @@ def run_agentic_summaries(index_path: Path, config_path: Path) -> Path:
 
     def job(position: int, message: dict[str, Any]) -> tuple[int, str]:
         pipeline_id = str(message.get("pipeline_id") or "")
-        workdir = Path(str(message.get("agent_workdir") or "")).expanduser().resolve()
+        workdir = Path(str(message.get("mail_dir") or "")).expanduser().resolve()
         output_path = workdir / "summary.json"
         run_stage([
             sys.executable,
             str(SCRIPT_DIR / "summarize-mail-agentic.py"),
             "--pipeline-id", pipeline_id,
-            "--agent-workdir", str(workdir),
+            "--mail-dir", str(workdir),
             "--output", str(output_path),
             "--config", str(config_path),
         ])

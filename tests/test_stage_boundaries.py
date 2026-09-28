@@ -30,7 +30,7 @@ class StageBoundaryTests(unittest.TestCase):
         source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
         self.assertIn("summarize-mail-agentic.py", source)
         self.assertIn('"--pipeline-id"', source)
-        self.assertIn('"--agent-workdir"', source)
+        self.assertIn('"--mail-dir"', source)
         self.assertIn('"--output"', source)
         self.assertIn('get("concurrency") or 8', source)
 
