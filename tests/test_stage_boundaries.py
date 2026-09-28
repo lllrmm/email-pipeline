@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import tempfile
@@ -63,30 +62,33 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertNotIn('parser.add_argument("--output"', aggregator)
         self.assertIn('workdir / "aggregation"', aggregator)
         self.assertIn('return f"aggregation-', aggregator)
-        self.assertIn('index_path.parent / "aggregation"', orchestrator)
+        self.assertIn('day_dir / "aggregation"', orchestrator)
 
-    def test_compatibility_bundle_joins_matching_artifacts(self) -> None:
+    def test_scan_log_replaces_mail_index_and_bundle_artifacts(self) -> None:
+        indexer = (ROOT / "index-mail.py").read_text(encoding="utf-8")
+        orchestrator_source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
+
+        self.assertIn('artifact_type": "mail_scan_log"', indexer)
+        self.assertIn('/ "scan-log"', indexer)
+        self.assertNotIn('"mail-index.json"', indexer)
+        self.assertNotIn('"mail-index.json"', orchestrator_source)
+        self.assertNotIn('"bundle.json"', orchestrator_source)
+        self.assertNotIn("materialize_bundle", orchestrator_source)
+
+    def test_orchestrator_reads_daily_summary_directly_from_aggregation(self) -> None:
         orchestrator = load_script("daily_orchestrator", ROOT / "daily-mail-pipeline.py")
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            unpack_path = root / "mail-index.json"
-            summary_path = root / "summary.json"
-            unpack = {
-                "schema_version": 2,
-                "artifact_type": "mail_index",
+            aggregation_path = root / "aggregation.json"
+            scan_log = {
+                "schema_version": 1,
+                "artifact_type": "mail_scan_log",
                 "date": "2026-09-25",
                 "messages_total": 1,
-                "messages": [{
-                    "pipeline_id": "abc123",
-                    "subject": "Test",
-                    "date": "2026-09-25T10:00:00+08:00",
-                }],
+                "included_pipeline_ids": ["abc123"],
             }
-            unpack_bytes = json.dumps(unpack).encode("utf-8")
-            unpack_path.write_bytes(unpack_bytes)
-            summary = {
+            aggregation = {
                 "artifact_type": "mail_daily_summary",
-                "processor": {"processor": "opencode", "session_id": "ses-test"},
                 "daily_summary": {
                     "date": "2026-09-25",
                     "overview": "Test summary",
@@ -96,22 +98,11 @@ class StageBoundaryTests(unittest.TestCase):
                     "messages_requiring_review": 0,
                 },
             }
-            summary_path.write_text(json.dumps(summary), encoding="utf-8")
+            aggregation_path.write_text(json.dumps(aggregation), encoding="utf-8")
 
-            bundle_path, bundle, daily_summary = orchestrator.materialize_bundle(unpack_path, summary_path)
+            daily_summary = orchestrator.load_daily_summary(scan_log, aggregation_path)
 
-            self.assertEqual(bundle["artifact_type"], "mail_digest")
             self.assertEqual(daily_summary["overview"], "Test summary")
-            self.assertEqual(bundle["message_index"][0]["subject"], "Test")
-            forbidden = {
-                "size", "raw_path", "eml_path", "attachment_manifest_path",
-                "attachment_text_path", "body_original_chars", "body_extracted_chars",
-                "links", "images", "attachments",
-            }
-            encoded = json.dumps(bundle)
-            for key in forbidden:
-                self.assertNotIn(f'"{key}"', encoded)
-            self.assertTrue(bundle_path.exists())
 
 
 if __name__ == "__main__":

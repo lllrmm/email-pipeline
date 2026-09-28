@@ -30,11 +30,9 @@ tests/                             Synthetic MIME regression tests
 ```text
 Outlook envelope metadata
     -> index-mail.py
-    -> mail-index.json + emails/<pipeline_id>/request.json
+    -> scan-log/scan-<generated UTC time>.json + emails/<pipeline_id>/request.json
     -> daily-mail-pipeline.py calls summarize-mail-agentic.py per pipeline_id
     -> aggregation/aggregation-<generated UTC time>.json
-    -> daily-mail-pipeline.py compatibility merge
-    -> bundle.json
 ```
 
 `index-mail.py` never reads message bodies or unpacks MIME. The single-email
@@ -79,7 +77,7 @@ pipeline ID list, date work directory, and output path. The
 `mail-daily-aggregator` reads each `emails/<pipeline_id>/summary.json`, groups
 related activity times, deadlines, and actions into one real-world event, and
 writes a timestamped public JSON under `aggregation/`. The public
-summary, compatibility bundle, and Cron stdout intentionally exclude raw mail
+summary and Cron stdout intentionally exclude raw mail
 paths, EML paths, attachment manifests/text paths, sizes, extraction counters,
 links, images, and attachment inventories.
 
@@ -124,7 +122,6 @@ Himalaya IDs are not part of this interface.
 
 ```text
 ~/.hermes/email/daily/YYYY-MM-DD/
-├── mail-index.json
 ├── emails/
 │   └── <pipeline_id>/
 │       ├── request.json
@@ -137,13 +134,18 @@ Himalaya IDs are not part of this interface.
 │       └── opencode-run/
 │           ├── events.jsonl
 │           └── metadata.json
+├── scan-log/
+│   └── scan-20260928T095900.000000Z.json
 ├── aggregation/
 │   ├── aggregation-20260928T100435.098404Z.json
 │   └── _run/
 │       ├── events.jsonl
 │       └── stderr.txt
-├── bundle.json
 ```
+
+Each scan log records only the scan run status, timestamps, mailbox failures,
+counts, and `included_pipeline_ids`. Email identity, metadata, IMAP location,
+and workspace information remain authoritative in SQLite.
 
 The stable identity is `SHA256(secret_salt || NUL || rfc_message_id)`. Folder
 names and Himalaya IDs are stored only as mutable transport locations in

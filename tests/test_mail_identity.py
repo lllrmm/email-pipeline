@@ -16,6 +16,11 @@ SPEC.loader.exec_module(INDEX_MAIL)
 
 
 class MailIdentityTests(unittest.TestCase):
+    def test_scan_log_filename_uses_generated_utc_time(self) -> None:
+        filename = INDEX_MAIL.scan_log_filename("2026-09-28T10:04:35.098404Z")
+
+        self.assertEqual(filename, "scan-20260928T100435.098404Z.json")
+
     def test_existing_database_is_migrated_with_metadata_table(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Path(temp_dir) / "legacy.sqlite3"

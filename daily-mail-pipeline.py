@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Compatibility orchestrator for unpack and summarize mail stages."""
+"""Orchestrate mail scanning, per-email analysis, and daily aggregation."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -18,22 +17,6 @@ import yaml
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes" / "email" / "daily"
-
-def secure_write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    temp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    try:
-        with temp_path.open("w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
-        temp_path.chmod(0o600)
-        os.replace(temp_path, path)
-        path.chmod(0o600)
-    finally:
-        try:
-            temp_path.unlink()
-        except FileNotFoundError:
-            pass
-
 
 def run_stage(command: list[str]) -> dict[str, Any]:
     completed = subprocess.run(command, text=True, capture_output=True, check=False)
@@ -53,16 +36,16 @@ def run_stage(command: list[str]) -> dict[str, Any]:
     return result
 
 
-def run_agentic_summaries(index_path: Path, config_path: Path) -> Path:
-    index = json.loads(index_path.read_text(encoding="utf-8"))
+def run_agentic_summaries(scan_log_path: Path, config_path: Path) -> Path:
+    scan_log = json.loads(scan_log_path.read_text(encoding="utf-8"))
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     workers = max(1, int((config.get("opencode") or {}).get("concurrency") or 8))
-    messages = list(index.get("messages") or [])
-    completed_ids: list[str | None] = [None] * len(messages)
+    pipeline_ids = list(scan_log.get("included_pipeline_ids") or [])
+    day_dir = scan_log_path.parent.parent
+    completed_ids: list[str | None] = [None] * len(pipeline_ids)
 
-    def job(position: int, message: dict[str, Any]) -> tuple[int, str]:
-        pipeline_id = str(message.get("pipeline_id") or "")
-        workdir = Path(str(message.get("mail_dir") or "")).expanduser().resolve()
+    def job(position: int, pipeline_id: str) -> tuple[int, str]:
+        workdir = (day_dir / "emails" / pipeline_id).resolve()
         output_path = workdir / "summary.json"
         run_stage([
             sys.executable,
@@ -75,68 +58,37 @@ def run_agentic_summaries(index_path: Path, config_path: Path) -> Path:
         return position, pipeline_id
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(job, position, message) for position, message in enumerate(messages)]
+        futures = [pool.submit(job, position, pipeline_id) for position, pipeline_id in enumerate(pipeline_ids)]
         for future in as_completed(futures):
             position, pipeline_id = future.result()
             completed_ids[position] = pipeline_id
 
-    pipeline_ids = [pipeline_id for pipeline_id in completed_ids if pipeline_id]
-    aggregation_dir = index_path.parent / "aggregation"
+    completed_pipeline_ids = [pipeline_id for pipeline_id in completed_ids if pipeline_id]
+    aggregation_dir = day_dir / "aggregation"
     result = run_stage([
         sys.executable,
         str(SCRIPT_DIR / "mails-aggregate-agentic.py"),
-        "--pipeline-id-list", *pipeline_ids,
-        "--agent-workdir", str(index_path.parent),
+        "--pipeline-id-list", *completed_pipeline_ids,
+        "--agent-workdir", str(day_dir),
         "--output-dir", str(aggregation_dir),
         "--config", str(config_path),
     ])
     return Path(result["summary_path"])
 
 
-def materialize_bundle(
-    index_path: Path,
-    summary_path: Path | None,
-) -> tuple[Path, dict[str, Any], dict[str, Any]]:
-    index_bytes = index_path.read_bytes()
-    unpack = json.loads(index_bytes)
-    summary: dict[str, Any] | None = None
-    daily_summary: dict[str, Any]
-    if summary_path:
-        summary = json.loads(summary_path.read_bytes())
-        daily_summary = dict(summary.get("daily_summary") or {})
-    else:
-        daily_summary = {
-            "date": unpack.get("date"),
-            "overview": "摘要阶段未运行。",
-            "events": [],
-            "warnings": ["summary_disabled"],
-            "messages_total": unpack.get("messages_total", 0),
-            "messages_requiring_review": unpack.get("messages_total", 0),
-        }
-
-    message_index = [
-        {
-            "pipeline_id": item.get("pipeline_id"),
-            "subject": item.get("subject"),
-            "date": item.get("date"),
-        }
-        for item in unpack.get("messages") or []
-    ]
-    bundle = {
-        "schema_version": 3,
-        "artifact_type": "mail_digest",
-        "date": unpack.get("date"),
-        "generated_at": unpack.get("generated_at"),
-        "messages_total": unpack.get("messages_total", len(message_index)),
-        "mailboxes_total": unpack.get("mailboxes_total"),
-        "mailboxes_failed": unpack.get("mailboxes_failed") or [],
-        "daily_summary": daily_summary,
-        "message_index": message_index,
-        "summary_processor": summary.get("processor") if summary else None,
+def load_daily_summary(scan_log: dict[str, Any], aggregation_path: Path | None) -> dict[str, Any]:
+    if aggregation_path:
+        aggregation = json.loads(aggregation_path.read_text(encoding="utf-8"))
+        return dict(aggregation.get("daily_summary") or {})
+    messages_total = int(scan_log.get("messages_total") or 0)
+    return {
+        "date": scan_log.get("date"),
+        "overview": "摘要阶段未运行。",
+        "events": [],
+        "warnings": ["summary_disabled"],
+        "messages_total": messages_total,
+        "messages_requiring_review": messages_total,
     }
-    bundle_path = index_path.with_name("bundle.json")
-    secure_write_text(bundle_path, json.dumps(bundle, ensure_ascii=False, indent=2))
-    return bundle_path, bundle, daily_summary
 
 
 def main() -> int:
@@ -167,26 +119,27 @@ def main() -> int:
 
     try:
         index_result = run_stage(index_command)
-        index_paths = []
+        scan_log_paths = []
         if index_result.get("mode") == "range":
-            index_paths = [Path(item["index_path"]) for item in index_result.get("per_day") or []]
+            scan_log_paths = [Path(item["scan_log_path"]) for item in index_result.get("per_day") or []]
         else:
-            index_paths = [Path(index_result["index_path"])]
+            scan_log_paths = [Path(index_result["scan_log_path"])]
 
         per_day: list[dict[str, Any]] = []
         total_messages = 0
-        for index_path in index_paths:
-            summary_path: Path | None = None
+        for scan_log_path in scan_log_paths:
+            scan_log = json.loads(scan_log_path.read_text(encoding="utf-8"))
+            aggregation_path: Path | None = None
             if not args.no_summary:
-                summary_path = run_agentic_summaries(index_path, args.config.expanduser().resolve())
-            bundle_path, bundle, daily_summary = materialize_bundle(index_path, summary_path)
-            total_messages += int(bundle.get("messages_total") or 0)
+                aggregation_path = run_agentic_summaries(scan_log_path, args.config.expanduser().resolve())
+            daily_summary = load_daily_summary(scan_log, aggregation_path)
+            messages_total = int(scan_log.get("messages_total") or 0)
+            total_messages += messages_total
             per_day.append({
-                "date": bundle.get("date"),
-                "bundle_path": str(bundle_path),
-                "index_path": str(index_path),
-                "summary_path": str(summary_path) if summary_path else None,
-                "messages_total": bundle.get("messages_total"),
+                "date": scan_log.get("date"),
+                "scan_log_path": str(scan_log_path),
+                "aggregation_path": str(aggregation_path) if aggregation_path else None,
+                "messages_total": messages_total,
                 "daily_summary": daily_summary,
             })
     except Exception as exc:

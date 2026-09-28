@@ -50,6 +50,16 @@ OUT_ROOT = HOME / ".hermes" / "email" / "daily"
 HIMALAYA_TIMEOUT = 90
 DEFAULT_CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
+
+def utc_now() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def scan_log_filename(generated_at: str) -> str:
+    timestamp = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    timestamp = timestamp.astimezone(dt.timezone.utc)
+    return f"scan-{timestamp.strftime('%Y%m%dT%H%M%S.%fZ')}.json"
+
 def run(cmd: list[str], timeout: int = HIMALAYA_TIMEOUT, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
@@ -278,7 +288,7 @@ def main() -> int:
 
     config_path = Path(args.config).expanduser().resolve()
     out_root = Path(args.output_root).expanduser().resolve()
-    generated_at = dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    started_at = utc_now()
 
     # ---- date window(s) ---------------------------------------------------
     try:
@@ -314,32 +324,36 @@ def main() -> int:
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
 
-    def write_error_bundle(error: str) -> str:
-        bundle: dict[str, Any] = {
-            "schema_version": 2,
-            "artifact_type": "mail_index",
-            "date": first_day,
-            "generated_at": generated_at,
-            "config_path": str(config_path),
-            "fatal_error": error,
-            "messages_total": 0,
-            "messages": [],
-        }
-        if range_mode:
-            bundle["backfill_days"] = days
-            path = out_root / f"_backfill_error_{first_day}_{last_day}.json"
-        else:
-            path = out_dirs[days[0]] / "mail-index.json"
-        secure_write_text(path, json.dumps(bundle, ensure_ascii=False, indent=2))
-        return str(path)
+    def write_error_logs(error: str) -> list[str]:
+        paths: list[str] = []
+        for day in days:
+            generated_at = utc_now()
+            log = {
+                "schema_version": 1,
+                "artifact_type": "mail_scan_log",
+                "status": "failed",
+                "date": day,
+                "started_at": started_at,
+                "completed_at": generated_at,
+                "generated_at": generated_at,
+                "fatal_error": error,
+                "messages_total": 0,
+                "included_pipeline_ids": [],
+                "mailboxes_failed": [],
+            }
+            log_dir = out_dirs[day] / "scan-log"
+            path = log_dir / scan_log_filename(generated_at)
+            secure_write_text(path, json.dumps(log, ensure_ascii=False, indent=2))
+            paths.append(str(path))
+        return paths
 
     # ---- config -----------------------------------------------------------
     try:
         cfg = load_config(config_path)
     except Exception as e:
         error = f"config_error: {e}"
-        path = write_error_bundle(error)
-        print(json.dumps({"ok": False, "index_path": path, "error": error}, ensure_ascii=False))
+        paths = write_error_logs(error)
+        print(json.dumps({"ok": False, "scan_log_paths": paths, "error": error}, ensure_ascii=False))
         return 1
 
     identity_cfg = cfg.get("identity") or {}
@@ -365,8 +379,8 @@ def main() -> int:
             mailboxes = [m.get("name") or m.get("id") for m in mailboxes_data.get("mailboxes", []) if (m.get("name") or m.get("id"))]
         except Exception as e:
             error = f"mailbox_list_failed: {e}"
-            path = write_error_bundle(error)
-            print(json.dumps({"ok": False, "index_path": path, "error": error}, ensure_ascii=False))
+            paths = write_error_logs(error)
+            print(json.dumps({"ok": False, "scan_log_paths": paths, "error": error}, ensure_ascii=False))
             return 1
 
     concurrency_cfg = cfg.get("concurrency") or {}
@@ -438,56 +452,56 @@ def main() -> int:
             day, fi, ei, mail = fut.result()
             results[day].append((fi, ei, mail))
 
-    # ---- write immutable per-day unpack bundles ---------------------------
+    # ---- write immutable per-day scan logs --------------------------------
     mailboxes_failed_out = [e for _, e in sorted(folder_failures)]
-    index_paths: dict[str, str] = {}
+    scan_log_paths: dict[str, str] = {}
     per_day: list[dict[str, Any]] = []
     total_messages = 0
     for d in days:
         ordered = sorted(results[d], key=lambda x: (x[0], x[1]))
         unique_messages: dict[str, dict[str, Any]] = {}
-        errors: list[dict[str, Any]] = []
         for _, _, message in ordered:
             pipeline_id = message.get("pipeline_id")
             if pipeline_id:
                 unique_messages[pipeline_id] = message
-            else:
-                errors.append(message)
-        messages = list(unique_messages.values()) + errors
-        bundle: dict[str, Any] = {
-            "schema_version": 2,
-            "artifact_type": "mail_index",
+        pipeline_ids = list(unique_messages)
+        generated_at = utc_now()
+        scan_log: dict[str, Any] = {
+            "schema_version": 1,
+            "artifact_type": "mail_scan_log",
+            "status": "completed",
             "date": d,
+            "started_at": started_at,
+            "completed_at": generated_at,
             "generated_at": generated_at,
             "range": f"HKT {d} 00:00 to {next_day(d)} 00:00 (half-open)",
             "account": account_name,
             "scan_scope": "all himalaya mailboxes including Canvas, Inbox, Carear Center, Junk Email, Deleted Items, __MINIMIZED/*",
-            "config_path": str(config_path),
             "timezone": scan_tz_name,
             "concurrency": concurrency_info,
             "mailboxes_total": len(mailboxes),
             "mailboxes_failed": mailboxes_failed_out,
-            "messages_total": len(messages),
-            "messages": messages,
+            "messages_total": len(pipeline_ids),
+            "included_pipeline_ids": pipeline_ids,
         }
         if range_mode:
-            bundle["backfill"] = {"from": first_day, "to": last_day, "days": len(days)}
-        index_path = out_dirs[d] / "mail-index.json"
-        secure_write_text(index_path, json.dumps(bundle, ensure_ascii=False, indent=2))
-        index_paths[d] = str(index_path)
-        total_messages += len(messages)
+            scan_log["backfill"] = {"from": first_day, "to": last_day, "days": len(days)}
+        log_dir = out_dirs[d] / "scan-log"
+        scan_log_path = log_dir / scan_log_filename(generated_at)
+        secure_write_text(scan_log_path, json.dumps(scan_log, ensure_ascii=False, indent=2))
+        scan_log_paths[d] = str(scan_log_path)
+        total_messages += len(pipeline_ids)
         per_day.append({
             "date": d,
-            "index_path": str(index_path),
-            "messages_total": len(messages),
-            "errors": sum(1 for m in messages if m.get("unpack_error")),
+            "scan_log_path": str(scan_log_path),
+            "messages_total": len(pipeline_ids),
         })
 
     if not range_mode:
         print(json.dumps({
             "ok": True,
-            "index_path": index_paths[days[0]],
-            "generated_at": generated_at,
+            "scan_log_path": scan_log_paths[days[0]],
+            "generated_at": json.loads(Path(scan_log_paths[days[0]]).read_text(encoding="utf-8"))["generated_at"],
             "mailboxes_total": len(mailboxes),
             "mailboxes_failed": mailboxes_failed_out,
             "messages_total": total_messages,
