@@ -45,7 +45,6 @@ token_command = "/home/daniel/.hermes/email/outlook-token-refresh.sh"
 concurrency = 1
 
 [watcher]
-idle_accelerator_mailbox = "Inbox"
 poll_seconds = 60
 debounce_seconds = 10
 

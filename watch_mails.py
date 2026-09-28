@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Wake on IMAP changes and run incremental summarize-only processing."""
+"""Poll every IMAP folder for new UIDs and enqueue new messages."""
 
 from __future__ import annotations
 
@@ -86,7 +86,6 @@ def main() -> int:
     global LOGGER
     LOGGER = configure_daily_logger(Path.home() / ".hermes" / "email" / "daily", "watcher", boundary_timezone)
     watch = config.get("watcher") or {}
-    idle_mailbox = str(watch.get("idle_accelerator_mailbox") or "Inbox")
     poll_seconds = max(15, int(watch.get("poll_seconds") or 60))
     debounce_seconds = max(1, int(watch.get("debounce_seconds") or 10))
     identity = config.get("identity") or {}
@@ -94,7 +93,7 @@ def main() -> int:
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
     index = MailIdentityIndex(database)
     previous = json.loads(STATE_PATH.read_text(encoding="utf-8")) if STATE_PATH.is_file() else {}
-    LOGGER.info("watcher_start poll_seconds=%d debounce_seconds=%d idle_accelerator=%s", poll_seconds, debounce_seconds, idle_mailbox)
+    LOGGER.info("watcher_start mode=all_folder_uidnext_poll poll_seconds=%d debounce_seconds=%d", poll_seconds, debounce_seconds)
     while not STOP:
         try:
             with connect_imap(config) as client:
@@ -111,13 +110,11 @@ def main() -> int:
                         LOGGER.info("enqueued detected=%d inserted=%d changed_folders=%s", len(mails), inserted, sorted(changes))
                 previous = current
                 secure_write_text(STATE_PATH, json.dumps(current, ensure_ascii=False, indent=2))
-                client.select_folder(idle_mailbox, readonly=True)
-                client.idle()
-                client.idle_check(timeout=poll_seconds)
-                client.idle_done()
         except Exception as exc:
             LOGGER.exception("watch_error")
             time.sleep(15)
+            continue
+        time.sleep(poll_seconds)
     LOGGER.info("watcher_stop")
     return 0
 

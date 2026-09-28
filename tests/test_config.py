@@ -18,6 +18,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config["scanner"]["concurrency"], 1)
         self.assertEqual(config["imap"]["concurrency"], 1)
         self.assertEqual(config["watcher"]["poll_seconds"], 60)
+        self.assertNotIn("idle_accelerator_mailbox", config["watcher"])
         self.assertNotIn("concurrency", config)
         self.assertNotIn("backend", config["summarizer"])
         self.assertNotIn("request", config["summarizer"])
