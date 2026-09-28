@@ -82,7 +82,9 @@ links, images, and attachment inventories.
 The public daily timeline uses one `events` array. Scheduled activities,
 deadlines, and user actions are distinguished by `kind` (`scheduled`,
 `deadline`, or `action`) instead of being split across separate top-level
-arrays.
+arrays. This JSON is written exactly as returned by the daily aggregation
+agent. Python validates the schema and rejects invalid/extra fields; it does
+not delete, add, rename, or convert fields.
 
 ## Test
 

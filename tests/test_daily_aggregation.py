@@ -13,12 +13,10 @@ SPEC.loader.exec_module(MODULE)
 
 
 class DailyAggregationTests(unittest.TestCase):
-    def test_output_is_strictly_whitelisted(self) -> None:
-        result = MODULE.normalize_daily_summary({
+    def test_valid_agent_output_is_preserved_verbatim(self) -> None:
+        result = {
             "date": "2026-09-25",
             "overview": "overview",
-            "links": [{"url": "https://secret.example"}],
-            "raw_path": "/private/mail.txt",
             "events": [{
                 "kind": "scheduled",
                 "title": "Event",
@@ -26,41 +24,33 @@ class DailyAggregationTests(unittest.TestCase):
                 "end": None,
                 "timezone": "Asia/Hong_Kong",
                 "location": "HKUST",
-                "confidence": "high",
-                "attachments": ["private.pdf"],
-                "source_messages": [{
-                    "folder": "Inbox", "id": "42", "subject": "Subject",
-                    "raw_path": "/private/mail.txt",
-                }],
-            }],
-            "deadlines": [{
-                "what": "Apply",
-                "date": "2026-10-02",
-                "time": "23:59",
-                "confidence": "high",
-                "source_messages": [{"folder": "Inbox", "id": "42", "subject": "Subject"}],
-            }],
-            "actions": [{
-                "what": "Prepare documents",
-                "due": "2026-10-01",
+                "due": None,
                 "priority": "high",
-                "source_messages": [{"folder": "Inbox", "id": "42", "subject": "Subject"}],
+                "confidence": "high",
+                "source_messages": [{
+                    "folder": "Inbox", "id": "42", "subject": "Subject"
+                }],
             }],
             "warnings": [],
             "messages_total": 1,
             "messages_requiring_review": 0,
-        })
+        }
 
-        self.assertNotIn("links", result)
-        self.assertNotIn("raw_path", result)
-        self.assertNotIn("deadlines", result)
-        self.assertNotIn("actions", result)
-        self.assertNotIn("attachments", result["events"][0])
-        self.assertEqual([item["kind"] for item in result["events"]], ["scheduled", "deadline", "action"])
-        self.assertEqual(
-            result["events"][0]["source_messages"][0],
-            {"folder": "Inbox", "id": "42", "subject": "Subject"},
-        )
+        MODULE.validate_daily_summary(result)
+        self.assertEqual(result["events"][0]["title"], "Event")
+
+    def test_old_or_extra_fields_are_rejected_not_rewritten(self) -> None:
+        invalid = {
+            "date": "2026-09-25",
+            "overview": "overview",
+            "events": [],
+            "deadlines": [],
+            "warnings": [],
+            "messages_total": 1,
+            "messages_requiring_review": 0,
+        }
+        with self.assertRaises(RuntimeError):
+            MODULE.validate_daily_summary(invalid)
 
 
 if __name__ == "__main__":

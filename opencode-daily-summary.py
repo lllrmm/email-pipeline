@@ -76,89 +76,36 @@ def parse_events(stdout: str) -> tuple[str | None, dict[str, Any] | None]:
     return session_id, None
 
 
-def source_messages(value: Any) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-    return [
-        {
-            "folder": item.get("folder"),
-            "id": item.get("id"),
-            "subject": item.get("subject"),
-        }
-        for item in value
-        if isinstance(item, dict)
-    ]
+DAILY_KEYS = {
+    "date", "overview", "events", "warnings",
+    "messages_total", "messages_requiring_review",
+}
+EVENT_KEYS = {
+    "kind", "title", "start", "end", "due", "timezone", "location",
+    "priority", "confidence", "source_messages",
+}
+SOURCE_KEYS = {"folder", "id", "subject"}
 
 
-def normalize_daily_summary(value: dict[str, Any]) -> dict[str, Any]:
-    events: list[dict[str, Any]] = []
-    raw_events = value.get("events")
-    if isinstance(raw_events, list):
-        for item in raw_events:
-            if not isinstance(item, dict):
-                continue
-            events.append({
-                "kind": item.get("kind") if item.get("kind") in {"scheduled", "deadline", "action"} else "scheduled",
-                "title": item.get("title"),
-                "start": item.get("start"),
-                "end": item.get("end"),
-                "due": item.get("due"),
-                "timezone": item.get("timezone"),
-                "location": item.get("location"),
-                "priority": item.get("priority") or "medium",
-                "confidence": item.get("confidence") or "medium",
-                "source_messages": source_messages(item.get("source_messages")),
-            })
-
-    # Backward compatibility: normalize old model output into the event timeline.
-    raw_deadlines = value.get("deadlines")
-    if isinstance(raw_deadlines, list):
-        for item in raw_deadlines:
-            if not isinstance(item, dict):
-                continue
-            date = item.get("date")
-            time_value = item.get("time")
-            due = f"{date}T{time_value}" if date and time_value else date
-            events.append({
-                "kind": "deadline",
-                "title": item.get("what") or item.get("title"),
-                "start": None,
-                "end": None,
-                "due": due,
-                "timezone": item.get("timezone"),
-                "location": None,
-                "priority": item.get("priority") or "high",
-                "confidence": item.get("confidence") or "medium",
-                "source_messages": source_messages(item.get("source_messages")),
-            })
-
-    raw_actions = value.get("actions")
-    if isinstance(raw_actions, list):
-        for item in raw_actions:
-            if not isinstance(item, dict):
-                continue
-            events.append({
-                "kind": "action",
-                "title": item.get("what") or item.get("title"),
-                "start": None,
-                "end": None,
-                "due": item.get("due"),
-                "timezone": item.get("timezone"),
-                "location": None,
-                "priority": item.get("priority") or "medium",
-                "confidence": item.get("confidence") or "medium",
-                "source_messages": source_messages(item.get("source_messages")),
-            })
-
-    warnings = value.get("warnings")
-    return {
-        "date": value.get("date"),
-        "overview": str(value.get("overview") or ""),
-        "events": events,
-        "warnings": [str(item) for item in warnings] if isinstance(warnings, list) else [],
-        "messages_total": int(value.get("messages_total") or 0),
-        "messages_requiring_review": int(value.get("messages_requiring_review") or 0),
-    }
+def validate_daily_summary(value: dict[str, Any]) -> None:
+    if set(value) != DAILY_KEYS:
+        raise RuntimeError(f"daily summary keys do not match schema: {sorted(value)}")
+    if not isinstance(value.get("overview"), str):
+        raise RuntimeError("overview must be a string")
+    if not isinstance(value.get("events"), list) or not isinstance(value.get("warnings"), list):
+        raise RuntimeError("events and warnings must be arrays")
+    if not isinstance(value.get("messages_total"), int) or not isinstance(value.get("messages_requiring_review"), int):
+        raise RuntimeError("message counts must be integers")
+    for event in value["events"]:
+        if not isinstance(event, dict) or set(event) != EVENT_KEYS:
+            raise RuntimeError("event keys do not match schema")
+        if event.get("kind") not in {"scheduled", "deadline", "action"}:
+            raise RuntimeError(f"invalid event kind: {event.get('kind')}")
+        if not isinstance(event.get("source_messages"), list):
+            raise RuntimeError("source_messages must be an array")
+        for source in event["source_messages"]:
+            if not isinstance(source, dict) or set(source) != SOURCE_KEYS:
+                raise RuntimeError("source message keys do not match schema")
 
 
 def main() -> int:
@@ -210,6 +157,7 @@ def main() -> int:
     session_id, result = parse_events(completed.stdout)
     if completed.returncode != 0 or result is None:
         raise RuntimeError(f"daily aggregation failed: {completed.stderr[-1000:]} {completed.stdout[-1000:]}")
+    validate_daily_summary(result)
     output = {
         "schema_version": 3,
         "artifact_type": "mail_daily_summary",
@@ -218,7 +166,7 @@ def main() -> int:
             "session_id": session_id,
             "model": model,
         },
-        "daily_summary": normalize_daily_summary(result),
+        "daily_summary": result,
     }
     secure_write(output_path, json.dumps(output, ensure_ascii=False, indent=2))
     print(json.dumps({"ok": True, "summary_path": str(output_path), "session_id": session_id}, ensure_ascii=False))
