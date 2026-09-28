@@ -11,7 +11,9 @@ opencode_tool_dir="$HOME/.config/opencode/tools"
 opencode_email_config_dir="$hermes_home/opencode-email-runtime/config/opencode"
 
 install -d -m 700 "$script_dir"
-python3 -m pip install --user 'IMAPClient>=3.0,<4'
+if ! python3 -c 'import imapclient' 2>/dev/null; then
+  python3 -m pip install --user 'IMAPClient>=3.0,<4'
+fi
 
 install -m 700 "$repo_dir/daily-mail-pipeline.py" "$target"
 install -m 700 "$repo_dir/scan_mails.py" "$script_dir/scan_mails.py"
