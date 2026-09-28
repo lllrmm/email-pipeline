@@ -2,6 +2,10 @@
 
 Read-only Outlook IMAPClient email extraction and digest pipeline for Hermes Agent.
 
+All program-controlled timestamps and API ranges use UTC. Times authored inside
+email headers, bodies, attachments, or linked pages are not normalized by the
+pipeline; they are preserved as source material for the analysis agent.
+
 ## What it fixes
 
 - Parses raw RFC 5322 messages instead of Himalaya's rendered terminal output.

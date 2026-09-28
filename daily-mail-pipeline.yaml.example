@@ -30,7 +30,7 @@ watch:
   debounce_seconds: 10
 
 scan:
-  timezone: "Asia/Hong_Kong"
+  timezone: "UTC"
 
 identity:
   account: "outlook"
