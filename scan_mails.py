@@ -21,6 +21,7 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
         sys.path.insert(0, str(candidate))
 
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
+from email_pipeline.mail_identity import normalize_rfc_message_id  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
@@ -54,7 +55,7 @@ def scan_day(config: dict[str, Any], day: str, mailboxes: list[str] | None, limi
                 fetched = client.fetch(uids, [b"BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)]"])
                 for uid in uids:
                     header = BytesParser(policy=policy.default).parsebytes(response_bytes(fetched[int(uid)]), headersonly=True)
-                    rfc_message_id = str(header.get("Message-ID") or "").strip()
+                    rfc_message_id = normalize_rfc_message_id(str(header.get("Message-ID") or ""))
                     if not rfc_message_id:
                         raise RuntimeError(f"RFC Message-ID missing: {folder}/{uid}")
                     mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid)})

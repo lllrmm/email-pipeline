@@ -16,7 +16,7 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id  # noqa: E402
+from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id, normalize_rfc_message_id  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
@@ -31,7 +31,10 @@ def register_mail(
     salt: bytes,
     database_path: Path,
 ) -> dict[str, str]:
-    rfc_message_id = rfc_message_id.strip()
+    try:
+        rfc_message_id = normalize_rfc_message_id(rfc_message_id)
+    except ValueError as exc:
+        raise RuntimeError("RFC Message-ID is required") from exc
     folder = folder.strip()
     if not rfc_message_id:
         raise RuntimeError("RFC Message-ID is required")

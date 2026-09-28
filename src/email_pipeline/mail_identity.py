@@ -42,10 +42,17 @@ def get_or_create_salt(path: Path) -> bytes:
     return value
 
 
-def make_pipeline_id(salt: bytes, rfc_message_id: str) -> str:
+def normalize_rfc_message_id(rfc_message_id: str) -> str:
     normalized = rfc_message_id.strip()
+    if normalized.startswith("<") and normalized.endswith(">"):
+        normalized = normalized[1:-1].strip()
     if not normalized:
         raise ValueError("RFC Message-ID is empty")
+    return normalized
+
+
+def make_pipeline_id(salt: bytes, rfc_message_id: str) -> str:
+    normalized = normalize_rfc_message_id(rfc_message_id)
     return hashlib.sha256(salt + b"\0" + normalized.encode("utf-8", errors="strict")).hexdigest()
 
 
@@ -175,6 +182,7 @@ class MailIdentityIndex:
         identity_source: str = "rfc_message_id",
     ) -> bool:
         """Register one stable identity and return True only when newly inserted."""
+        rfc_message_id = normalize_rfc_message_id(rfc_message_id)
         now = dt.datetime.now(dt.timezone.utc).isoformat()
         with closing(self.connect()) as connection:
             cursor = connection.execute(
@@ -368,10 +376,11 @@ class MailIdentityIndex:
         return self._lookup("pipeline_id", pipeline_id)
 
     def lookup_rfc_message_id(self, rfc_message_id: str) -> list[dict[str, Any]]:
+        normalized = normalize_rfc_message_id(rfc_message_id)
         with closing(self.connect()) as connection:
             rows = connection.execute(
                 "SELECT pipeline_id FROM email_identity WHERE rfc_message_id=? ORDER BY first_seen",
-                (rfc_message_id.strip(),),
+                (normalized,),
             ).fetchall()
         return [result for row in rows if (result := self.lookup_pipeline_id(row["pipeline_id"]))]
 

@@ -109,7 +109,7 @@ class MailIdentityTests(unittest.TestCase):
             self.assertEqual(first["status"], "registered")
             self.assertEqual(second["status"], "already_registered")
             self.assertEqual(first["pipeline_id"], second["pipeline_id"])
-            self.assertEqual(identity["rfc_message_id"], "<registered@example.com>")
+            self.assertEqual(identity["rfc_message_id"], "registered@example.com")
             self.assertEqual(identity["locations"][0]["folder"], "Inbox")
             self.assertEqual(identity["workspaces"], [])
             self.assertIsNone(identity["metadata"])
@@ -148,7 +148,7 @@ class MailIdentityTests(unittest.TestCase):
             by_pipeline = index.lookup_pipeline_id(pipeline_id)
             by_rfc = index.lookup_rfc_message_id("<message@example.com>")
 
-            self.assertEqual(by_pipeline["rfc_message_id"], "<message@example.com>")
+            self.assertEqual(by_pipeline["rfc_message_id"], "message@example.com")
             self.assertEqual(by_pipeline["locations"][0]["imap_uid"], 42)
             self.assertEqual(by_pipeline["locations"][0]["uidvalidity"], 123)
             self.assertEqual(by_pipeline["workspaces"][0]["path"], str(workspace))
