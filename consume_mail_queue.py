@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -71,6 +72,14 @@ def process_event(event: dict, config: dict, config_path: Path, index: MailIdent
     return pipeline_id
 
 
+def process_claimed_event(event: dict, config: dict, config_path: Path, index: MailIdentityIndex, timezone_name: str) -> tuple[int, str | None, Exception | None]:
+    queue_id = int(event["queue_id"])
+    try:
+        return queue_id, process_event(event, config, config_path, index, timezone_name), None
+    except Exception as exc:
+        return queue_id, None, exc
+
+
 def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
@@ -79,24 +88,25 @@ def main() -> int:
     identity = config.get("identity") or {}
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
     timezone_name = str((config.get("program") or {}).get("timezone") or "UTC")
+    concurrency = max(1, int((config.get("summarizer") or {}).get("concurrency") or 1))
     configure_program_timezone(timezone_name)
     index = MailIdentityIndex(database)
     while not STOP:
-        events = index.claim_events(limit=20)
+        events = index.claim_events(limit=concurrency)
         if not events:
             time.sleep(2)
             continue
         write_scan_log(events, timezone_name)
-        for event in events:
-            queue_id = int(event["queue_id"])
-            try:
-                pipeline_id = process_event(event, config, config_path, index, timezone_name)
-                index.complete_events([queue_id], {queue_id: pipeline_id})
-                print(json.dumps({"event": "queue_item_done", "queue_id": queue_id, "pipeline_id": pipeline_id}), flush=True)
-            except Exception as exc:
-                index.retry_events([queue_id], str(exc))
-                print(json.dumps({"event": "queue_item_error", "queue_id": queue_id, "error": str(exc)[:500]}), file=sys.stderr, flush=True)
-                time.sleep(15)
+        with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="mail-summary") as executor:
+            futures = [executor.submit(process_claimed_event, event, config, config_path, index, timezone_name) for event in events]
+            for future in as_completed(futures):
+                queue_id, pipeline_id, error = future.result()
+                if error is None and pipeline_id is not None:
+                    index.complete_events([queue_id], {queue_id: pipeline_id})
+                    print(json.dumps({"event": "queue_item_done", "queue_id": queue_id, "pipeline_id": pipeline_id}), flush=True)
+                else:
+                    index.retry_events([queue_id], str(error))
+                    print(json.dumps({"event": "queue_item_error", "queue_id": queue_id, "error": str(error)[:500]}), file=sys.stderr, flush=True)
     return 0
 
 

@@ -20,10 +20,10 @@ class EmailSummaryKeyTests(unittest.TestCase):
             config = root / "pipeline.toml"
             env = root / ".env"
             config.write_text(
-                "[summarizer.api]\n"
+                "[summarizer.model]\n"
                 "api_key = \"old-inline\"\n"
                 "api_key_env = \"DEEPSEEK_API_KEY\"\n"
-                "[aggregator.api]\n"
+                "[aggregator.model]\n"
                 "api_key = \"old-inline\"\n"
                 "api_key_env = \"DEEPSEEK_API_KEY\"\n",
                 encoding="utf-8",

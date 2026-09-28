@@ -99,12 +99,12 @@ def secure_write(path: Path, text: str) -> None:
 
 
 def resolve_key(stage_cfg: dict[str, Any]) -> str:
-    api = stage_cfg.get("api") or {}
-    env_name = str(api.get("api_key_env") or "EMAIL_SUMMARY_DEEPSEEK_API_KEY")
+    model = stage_cfg.get("model") or {}
+    env_name = str(model.get("api_key_env") or "EMAIL_SUMMARY_DEEPSEEK_API_KEY")
     value = os.environ.get(env_name, "").strip()
     if value:
         return value
-    inline_value = str(api.get("api_key") or "").strip()
+    inline_value = str(model.get("api_key") or "").strip()
     if inline_value:
         return inline_value
     for line in (Path.home() / ".hermes" / ".env").read_text(encoding="utf-8", errors="replace").splitlines():

@@ -92,6 +92,8 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn("enqueue_event", watcher)
         self.assertNotIn("daily-mail-pipeline.py", watcher)
         self.assertIn("summarize-mail-agentic.py", consumer)
+        self.assertIn("ThreadPoolExecutor", consumer)
+        self.assertIn('get("concurrency")', consumer)
         self.assertNotIn("aggregate-mails-agentic.py", consumer)
 
     def test_daily_aggregation_waits_for_queue_completion(self) -> None:

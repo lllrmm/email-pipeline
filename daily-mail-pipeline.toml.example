@@ -1,66 +1,35 @@
 system_prompt_file = "system-prompt.txt"
 
 [summarizer]
-backend = "opencode"
-
-[summarizer.api]
-base_url = "https://api.deepseek.com"
-api_key = ""
-api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"
+concurrency = 8
 
 [summarizer.model]
 provider = "deepseek"
 name = "deepseek-flash"
+base_url = "https://api.deepseek.com"
+api_key = ""
+api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"
 
 [summarizer.opencode]
 executable = "/home/daniel/.opencode/bin/opencode"
 agent = "mail-analyzer"
 timeout_seconds = 600
-concurrency = 8
 runtime_root = "/home/daniel/.hermes/opencode-email-runtime"
 
-[summarizer.request]
-temperature = 0.2
-max_tokens = 4000
-timeout_seconds = 120
-retries = 2
-
-[summarizer.request.response_format]
-type = "json_object"
-
-[summarizer.request.thinking]
-type = "enabled"
-
 [aggregator]
-backend = "opencode"
-
-[aggregator.api]
-base_url = "https://api.deepseek.com"
-api_key = ""
-api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"
 
 [aggregator.model]
 provider = "deepseek"
 name = "deepseek-flash"
+base_url = "https://api.deepseek.com"
+api_key = ""
+api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"
 
 [aggregator.opencode]
 executable = "/home/daniel/.opencode/bin/opencode"
 agent = "mail-daily-aggregator"
 timeout_seconds = 600
-concurrency = 1
 runtime_root = "/home/daniel/.hermes/opencode-email-runtime"
-
-[aggregator.request]
-temperature = 0.2
-max_tokens = 4000
-timeout_seconds = 120
-retries = 2
-
-[aggregator.request.response_format]
-type = "json_object"
-
-[aggregator.request.thinking]
-type = "enabled"
 
 [imap]
 host = "outlook.office365.com"
@@ -85,7 +54,6 @@ database_path = "/home/daniel/.hermes/email/mail-index.sqlite3"
 [concurrency]
 mailbox_scan = 1
 index = 4
-summarize = 8
 
 [throttle]
 scan_delay_seconds = 0.0
