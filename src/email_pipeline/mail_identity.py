@@ -398,16 +398,24 @@ class MailIdentityIndex:
         now = dt.datetime.now(dt.timezone.utc).isoformat()
         rfc_message_id = normalize_rfc_message_id(rfc_message_id)
         with closing(self.connect()) as connection:
-            cursor = connection.execute(
-                """INSERT INTO email_event_queue
-                (account, rfc_message_id, folder, uidvalidity, imap_uid, sent_at, detected_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(account, folder, uidvalidity, imap_uid) DO UPDATE SET
-                    sent_at=COALESCE(excluded.sent_at,email_event_queue.sent_at),
-                    status=CASE WHEN ? THEN 'pending' ELSE email_event_queue.status END,
-                    completed_at=CASE WHEN ? THEN NULL ELSE email_event_queue.completed_at END""",
-                (account, rfc_message_id, folder, int(uidvalidity), int(uid), sent_at, now, int(requeue), int(requeue)),
-            )
+            if requeue:
+                cursor = connection.execute(
+                    """INSERT INTO email_event_queue
+                    (account, rfc_message_id, folder, uidvalidity, imap_uid, sent_at, detected_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(account, folder, uidvalidity, imap_uid) DO UPDATE SET
+                        sent_at=COALESCE(excluded.sent_at,email_event_queue.sent_at),
+                        status='pending', completed_at=NULL, claimed_at=NULL, last_error=NULL""",
+                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), sent_at, now),
+                )
+            else:
+                cursor = connection.execute(
+                    """INSERT INTO email_event_queue
+                    (account, rfc_message_id, folder, uidvalidity, imap_uid, sent_at, detected_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(account, folder, uidvalidity, imap_uid) DO NOTHING""",
+                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), sent_at, now),
+                )
             connection.commit()
         return cursor.rowcount == 1
 

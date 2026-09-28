@@ -19,15 +19,12 @@ def run_stage(command:list[str])->dict[str,Any]:
     if not value.get("ok"): raise RuntimeError(str(value))
     return value
 def enqueue_scan_log(path:Path,config_path:Path)->dict[str,Any]:
-    log=json.loads(path.read_text(encoding="utf-8")); config=yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}; identity_cfg=config.get("identity") or {}; account=str(identity_cfg.get("account") or "outlook"); database=Path(identity_cfg.get("database_path") or (Path.home()/".hermes/email/mail-index.sqlite3")).expanduser().resolve(); index=MailIdentityIndex(database); queued=skipped=0; pipeline_ids=[]
+    log=json.loads(path.read_text(encoding="utf-8")); config=yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}; identity_cfg=config.get("identity") or {}; account=str(identity_cfg.get("account") or "outlook"); database=Path(identity_cfg.get("database_path") or (Path.home()/".hermes/email/mail-index.sqlite3")).expanduser().resolve(); index=MailIdentityIndex(database); queued=skipped=0
     for mail in log.get("mails") or []:
-        result=run_stage([sys.executable,str(SCRIPT_DIR/"index_mail.py"),"--rfc-message-id",str(mail["rfc_message_id"]),"--folder",str(mail["folder"]),"--uidvalidity",str(mail["uidvalidity"]),"--uid",str(mail["uid"]),"--config",str(config_path)])
-        pid=str(result["pipeline_id"])
-        if pid not in pipeline_ids: pipeline_ids.append(pid)
-        identity=index.lookup_pipeline_id(pid); valid=bool(identity and identity.get("summarized") is True and any((Path(item["path"])/"summary.json").is_file() for item in identity.get("workspaces") or []))
-        if valid: skipped+=1; continue
-        index.enqueue_event(account=account,rfc_message_id=str(mail["rfc_message_id"]),folder=str(mail["folder"]),uidvalidity=int(mail["uidvalidity"]),uid=int(mail["uid"]),sent_at=mail.get("sent_at"),requeue=True); queued+=1
-    return {"date":log.get("date"),"messages_total":len(log.get("mails") or []),"pipeline_ids":pipeline_ids,"queued":queued,"skipped":skipped,"mailboxes_total":log.get("mailboxes_total"),"mailboxes_failed":log.get("mailboxes_failed") or []}
+        inserted=index.enqueue_event(account=account,rfc_message_id=str(mail["rfc_message_id"]),folder=str(mail["folder"]),uidvalidity=int(mail["uidvalidity"]),uid=int(mail["uid"]),sent_at=mail.get("sent_at"))
+        if inserted: queued+=1
+        else: skipped+=1
+    return {"date":log.get("date"),"messages_total":len(log.get("mails") or []),"queued":queued,"skipped":skipped,"mailboxes_total":log.get("mailboxes_total"),"mailboxes_failed":log.get("mailboxes_failed") or []}
 def main()->int:
     os.umask(0o077); p=argparse.ArgumentParser(); p.add_argument("--date"); p.add_argument("--from",dest="date_from"); p.add_argument("--to",dest="date_to"); p.add_argument("--mailbox",action="append"); p.add_argument("--limit-per-mailbox",type=int,default=200); p.add_argument("--config",type=Path,default=DEFAULT_CONFIG); p.add_argument("--output-root",type=Path,default=DEFAULT_OUTPUT_ROOT); p.add_argument("--scan-log",type=Path); a=p.parse_args(); config=a.config.expanduser().resolve()
     try:

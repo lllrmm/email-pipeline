@@ -32,15 +32,18 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn("enqueue_event", source)
         self.assertNotIn("summarize-mail-agentic.py", source)
         self.assertNotIn("aggregate-mails-agentic.py", source)
+        self.assertNotIn("index_mail.py", source)
+        self.assertNotIn("summarized", source)
 
-    def test_scanner_is_transport_only_and_incremental_logic_belongs_to_orchestrator(self) -> None:
+    def test_scanner_and_fallback_use_queue_as_idempotency_boundary(self) -> None:
         scanner = (ROOT / "scan_mails.py").read_text(encoding="utf-8")
         orchestrator = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
         indexer = (ROOT / "index_mail.py").read_text(encoding="utf-8")
         summarizer = (ROOT / "summarize-mail-agentic.py").read_text(encoding="utf-8")
 
         self.assertNotIn('identity.get("summarized")', scanner)
-        self.assertIn('identity.get("summarized")', orchestrator)
+        self.assertIn("enqueue_event", orchestrator)
+        self.assertNotIn('identity.get("summarized")', orchestrator)
         self.assertNotIn('identity.get("summarized")', indexer)
         self.assertNotIn('identity.get("summarized")', summarizer)
 
