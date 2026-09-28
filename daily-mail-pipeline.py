@@ -1,49 +1,129 @@
 #!/usr/bin/env python3
 """Scan a time range and enqueue emails that still require summarization."""
+
 from __future__ import annotations
-import argparse,datetime as dt,json,os,subprocess,sys
+
+import argparse
+import datetime as dt
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
-SCRIPT_DIR=Path(__file__).resolve().parent
-for candidate in (SCRIPT_DIR,SCRIPT_DIR/"src"):
-    if str(candidate) not in sys.path: sys.path.insert(0,str(candidate))
-from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
 from email_pipeline.config import load_config  # noqa: E402
+from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
-DEFAULT_CONFIG=SCRIPT_DIR/"daily-mail-pipeline.toml"
-DEFAULT_OUTPUT_ROOT=Path.home()/".hermes/email/daily"
-def run_stage(command:list[str])->dict[str,Any]:
-    cp=subprocess.run(command,text=True,capture_output=True,check=False)
-    if cp.stderr: print(cp.stderr,file=sys.stderr,end="")
-    if cp.returncode!=0: raise RuntimeError((cp.stderr or cp.stdout)[-1000:])
-    value=json.loads(cp.stdout)
-    if not value.get("ok"): raise RuntimeError(str(value))
+
+DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.toml"
+DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes/email/daily"
+
+
+def run_stage(command: list[str]) -> dict[str, Any]:
+    completed = subprocess.run(command, text=True, capture_output=True, check=False)
+    if completed.stderr:
+        print(completed.stderr, file=sys.stderr, end="")
+    if completed.returncode != 0:
+        raise RuntimeError((completed.stderr or completed.stdout)[-1000:])
+    value = json.loads(completed.stdout)
+    if not value.get("ok"):
+        raise RuntimeError(str(value))
     return value
-def enqueue_scan_log(path:Path,config_path:Path)->dict[str,Any]:
-    log=json.loads(path.read_text(encoding="utf-8")); config=load_config(config_path); identity_cfg=config.get("identity") or {}; account=str(identity_cfg.get("account") or "outlook"); database=Path(identity_cfg.get("database_path") or (Path.home()/".hermes/email/mail-index.sqlite3")).expanduser().resolve(); index=MailIdentityIndex(database); queued=skipped=0
-    for mail in log.get("mails") or []:
-        inserted=index.enqueue_event(account=account,rfc_message_id=str(mail["rfc_message_id"]),folder=str(mail["folder"]),uidvalidity=int(mail["uidvalidity"]),uid=int(mail["uid"]),received_at=mail.get("received_at"))
-        if inserted: queued+=1
-        else: skipped+=1
-    return {"date":log.get("date"),"messages_total":len(log.get("mails") or []),"queued":queued,"skipped":skipped,"mailboxes_total":log.get("mailboxes_total"),"mailboxes_failed":log.get("mailboxes_failed") or []}
-def main()->int:
-    os.umask(0o077); p=argparse.ArgumentParser(); p.add_argument("--date"); p.add_argument("--from",dest="date_from"); p.add_argument("--to",dest="date_to"); p.add_argument("--from-time"); p.add_argument("--to-time"); p.add_argument("--mailbox",action="append"); p.add_argument("--limit-per-mailbox",type=int,default=200); p.add_argument("--config",type=Path,default=DEFAULT_CONFIG); p.add_argument("--output-root",type=Path,default=DEFAULT_OUTPUT_ROOT); p.add_argument("--scan-log",type=Path); a=p.parse_args(); config=a.config.expanduser().resolve()
-    try:
-        cfg=load_config(config); boundary=ZoneInfo(str(cfg.get("timezone") or "UTC")); configure_program_timezone(str(boundary))
-        if a.scan_log: paths=[a.scan_log.expanduser().resolve()]
+
+
+def enqueue_scan_result(result: dict[str, Any], config_path: Path) -> dict[str, Any]:
+    config = load_config(config_path)
+    identity_cfg = config.get("identity") or {}
+    account = str(identity_cfg.get("account") or "outlook")
+    database = Path(
+        identity_cfg.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")
+    ).expanduser().resolve()
+    index = MailIdentityIndex(database)
+    queued = skipped = 0
+    mails = result.get("mails") or []
+    for mail in mails:
+        inserted = index.enqueue_event(
+            account=account,
+            rfc_message_id=str(mail["rfc_message_id"]),
+            folder=str(mail["folder"]),
+            uidvalidity=int(mail["uidvalidity"]),
+            uid=int(mail["uid"]),
+            received_at=mail.get("received_at"),
+        )
+        if inserted:
+            queued += 1
         else:
-            cmd=[sys.executable,str(SCRIPT_DIR/"scan_mails.py"),"--config",str(config),"--output-root",str(a.output_root.expanduser()),"--limit-per-mailbox",str(a.limit_per_mailbox)]
-            if a.from_time or a.to_time:
-                if not a.from_time or not a.to_time: raise RuntimeError("--from-time and --to-time must be provided together")
-                from_time,to_time=a.from_time,a.to_time
-            else:
-                first=dt.date.fromisoformat(a.date_from or a.date or dt.datetime.now(boundary).date().isoformat()); last=dt.date.fromisoformat(a.date_to or a.date or first.isoformat())
-                local_start=dt.datetime.combine(first,dt.time.min,tzinfo=boundary); local_end=dt.datetime.combine(last+dt.timedelta(days=1),dt.time.min,tzinfo=boundary)
-                from_time=local_start.isoformat(); to_time=local_end.isoformat()
-            cmd.extend(["--from-time",from_time,"--to-time",to_time])
-            for mailbox in a.mailbox or []: cmd.extend(["--mailbox",mailbox])
-            result=run_stage(cmd); paths=[Path(item["scan_log_path"]) for item in result.get("per_day") or []] if result.get("mode")=="range" else [Path(result["scan_log_path"])]
-        per_day=[enqueue_scan_log(path,config) for path in paths]; print(json.dumps({"ok":True,"mode":"range" if len(per_day)>1 else "single","per_day":per_day},ensure_ascii=False,indent=2)); return 0
-    except Exception as exc: print(json.dumps({"ok":False,"error":str(exc)},ensure_ascii=False)); return 1
-if __name__=="__main__": raise SystemExit(main())
+            skipped += 1
+    return {
+        "date": result.get("date"),
+        "messages_total": len(mails),
+        "queued": queued,
+        "skipped": skipped,
+        "mailboxes_total": result.get("mailboxes_total"),
+        "mailboxes_failed": result.get("mailboxes_failed") or [],
+    }
+
+
+def main() -> int:
+    os.umask(0o077)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--date")
+    parser.add_argument("--from", dest="date_from")
+    parser.add_argument("--to", dest="date_to")
+    parser.add_argument("--from-time")
+    parser.add_argument("--to-time")
+    parser.add_argument("--mailbox", action="append")
+    parser.add_argument("--limit-per-mailbox", type=int, default=200)
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    args = parser.parse_args()
+    config_path = args.config.expanduser().resolve()
+    try:
+        config = load_config(config_path)
+        boundary = ZoneInfo(str(config.get("timezone") or "UTC"))
+        configure_program_timezone(str(boundary))
+        command = [
+            sys.executable,
+            str(SCRIPT_DIR / "scan_mails.py"),
+            "--config",
+            str(config_path),
+            "--output-root",
+            str(args.output_root.expanduser()),
+            "--limit-per-mailbox",
+            str(args.limit_per_mailbox),
+        ]
+        if args.from_time or args.to_time:
+            if not args.from_time or not args.to_time:
+                raise RuntimeError("--from-time and --to-time must be provided together")
+            from_time, to_time = args.from_time, args.to_time
+        else:
+            first = dt.date.fromisoformat(args.date_from or args.date or dt.datetime.now(boundary).date().isoformat())
+            last = dt.date.fromisoformat(args.date_to or args.date or first.isoformat())
+            from_time = dt.datetime.combine(first, dt.time.min, tzinfo=boundary).isoformat()
+            to_time = dt.datetime.combine(last + dt.timedelta(days=1), dt.time.min, tzinfo=boundary).isoformat()
+        command.extend(["--from-time", from_time, "--to-time", to_time])
+        for mailbox in args.mailbox or []:
+            command.extend(["--mailbox", mailbox])
+        result = run_stage(command)
+        scan_results = result.get("per_day") or [result]
+        per_day = [enqueue_scan_result(item, config_path) for item in scan_results]
+        print(json.dumps({
+            "ok": True,
+            "mode": "range" if len(per_day) > 1 else "single",
+            "per_day": per_day,
+        }, ensure_ascii=False, indent=2))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

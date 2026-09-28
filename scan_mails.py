@@ -22,22 +22,12 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
 from email_pipeline.config import load_config  # noqa: E402
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
 from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
-from email_pipeline.program_time import configure_program_timezone, filename_timestamp, format_rfc3339, now_rfc3339, timezone  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import normalize_rfc_message_id  # noqa: E402
-from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.toml"
 DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes" / "email" / "daily"
 LOGGER = __import__("logging").getLogger("email_pipeline.scanner")
-
-
-def utc_now() -> str:
-    return now_rfc3339()
-
-
-def scan_log_filename(value: str) -> str:
-    timestamp = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return f"scan-{filename_timestamp(timestamp)}.json"
 
 
 def parse_utc(value: str) -> dt.datetime:
@@ -114,17 +104,12 @@ def main() -> int:
     first = start.astimezone(boundary).date()
     last = (end - dt.timedelta(microseconds=1)).astimezone(boundary).date()
     days = [(first + dt.timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
-    started = utc_now()
     mails, failures, mailbox_count = scan_range(config, start, end, args.mailbox, args.limit_per_mailbox)
     per_day = []
     total = 0
     for day in days:
         day_mails = [mail for mail in mails if parse_utc(str(mail["received_at"])).astimezone(boundary).date().isoformat() == day]
-        generated = utc_now()
-        log = {"schema_version": 3, "artifact_type": "mail_scan_log", "status": "completed", "date": day, "from_time": utc_text(start), "to_time": utc_text(end), "started_at": started, "completed_at": generated, "generated_at": generated, "messages_total": len(day_mails), "mails": day_mails, "rfc_message_ids": [item["rfc_message_id"] for item in day_mails], "mailboxes_total": mailbox_count, "mailboxes_failed": failures}
-        path = args.output_root.expanduser().resolve() / day / "scan-log" / scan_log_filename(generated)
-        secure_write_text(path, json.dumps(log, ensure_ascii=False, indent=2))
-        per_day.append({"date": day, "scan_log_path": str(path), "messages_total": len(day_mails), "mails": day_mails, "rfc_message_ids": log["rfc_message_ids"]})
+        per_day.append({"date": day, "messages_total": len(day_mails), "mails": day_mails, "rfc_message_ids": [item["rfc_message_id"] for item in day_mails], "mailboxes_total": mailbox_count, "mailboxes_failed": failures})
         total += len(day_mails)
     if len(per_day) == 1:
         print(json.dumps({"ok": True, **per_day[0]}, ensure_ascii=False, indent=2))

@@ -24,7 +24,7 @@ from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.mail_identity import get_or_create_salt  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 from index_mail import register_mail  # noqa: E402
-from email_pipeline.program_time import configure_program_timezone, filename_timestamp, now_rfc3339  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone  # noqa: E402
 
 STOP = False
 CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.toml"
@@ -41,16 +41,6 @@ def event_day(event: dict, timezone_name: str) -> str:
         return value.astimezone(ZoneInfo(timezone_name)).date().isoformat()
     except Exception:
         return dt.datetime.now(ZoneInfo(timezone_name)).date().isoformat()
-
-
-def write_scan_log(events: list[dict], timezone_name: str) -> Path:
-    now = now_rfc3339()
-    day = event_day(events[0], timezone_name)
-    name = f"scan-{filename_timestamp(dt.datetime.fromisoformat(now))}.json"
-    mails = [{"rfc_message_id": e["rfc_message_id"], "folder": e["folder"], "uidvalidity": e["uidvalidity"], "uid": e["imap_uid"], "received_at": e.get("received_at")} for e in events]
-    path = Path.home() / ".hermes/email/daily" / day / "scan-log" / name
-    secure_write_text(path, json.dumps({"schema_version": 2, "artifact_type": "mail_scan_log", "status": "completed", "source": "imap_event_queue", "date": day, "generated_at": now, "messages_total": len(mails), "mails": mails, "rfc_message_ids": [m["rfc_message_id"] for m in mails], "mailboxes_total": len({m["folder"] for m in mails}), "mailboxes_failed": []}, ensure_ascii=False, indent=2))
-    return path
 
 
 def process_event(event: dict, config: dict, config_path: Path, index: MailIdentityIndex, timezone_name: str) -> str:
@@ -96,7 +86,6 @@ def main() -> int:
         if not events:
             time.sleep(2)
             continue
-        write_scan_log(events, timezone_name)
         with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="mail-summary") as executor:
             futures = [executor.submit(process_claimed_event, event, config, config_path, index, timezone_name) for event in events]
             for future in as_completed(futures):

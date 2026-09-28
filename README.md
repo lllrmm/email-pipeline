@@ -41,7 +41,7 @@ tests/                             Synthetic MIME regression tests
 Outlook envelope metadata
     -> scan_mails.py
     -> index_mail.py registers each RFC Message-ID
-    -> scan-log/scan-<generated program time>.json
+    -> logs/scanner/scanner.log + scanner JSON stdout
     -> durable email_event_queue
     -> consume_mail_queue.py registers and summarizes each pending email
     -> explicit aggregate-mails-agentic.py call
@@ -155,8 +155,8 @@ IMAP UIDs are not part of this interface.
 │       └── opencode-run/
 │           ├── events.jsonl
 │           └── metadata.json
-├── scan-log/
-│   └── scan-20260928T175900+0800.json
+├── logs/
+│   └── scanner/scanner.log
 ├── aggregation/
 │   ├── aggregation-20260928T180435+0800.json
 │   └── _run/

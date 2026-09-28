@@ -120,16 +120,18 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('return f"aggregation-', aggregator)
         self.assertNotIn("daily-mail-pipeline.py", aggregator)
 
-    def test_scan_log_replaces_mail_index_and_bundle_artifacts(self) -> None:
+    def test_scanner_uses_stdout_and_logs_without_scan_log_artifacts(self) -> None:
         indexer = (ROOT / "scan_mails.py").read_text(encoding="utf-8")
         orchestrator_source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
 
-        self.assertIn('artifact_type": "mail_scan_log"', indexer)
-        self.assertIn('/ "scan-log"', indexer)
+        self.assertNotIn('artifact_type": "mail_scan_log"', indexer)
+        self.assertNotIn('/ "scan-log"', indexer)
+        self.assertIn('"mails": day_mails', indexer)
         self.assertNotIn('"mail-index.json"', indexer)
         self.assertNotIn('"mail-index.json"', orchestrator_source)
         self.assertNotIn('"bundle.json"', orchestrator_source)
         self.assertNotIn("materialize_bundle", orchestrator_source)
+        self.assertNotIn("--scan-log", orchestrator_source)
 
 
 

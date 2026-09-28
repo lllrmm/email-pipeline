@@ -21,12 +21,6 @@ INDEX_SPEC.loader.exec_module(INDEX_MAIL)
 
 
 class MailIdentityTests(unittest.TestCase):
-    def test_scan_log_filename_uses_configured_timezone(self) -> None:
-        configure_program_timezone("Asia/Hong_Kong")
-        filename = SCAN_MAILS.scan_log_filename("2026-09-28T10:04:35.098404Z")
-
-        self.assertEqual(filename, "scan-20260928T180435+0800.json")
-
     def test_existing_database_is_migrated_with_metadata_table(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Path(temp_dir) / "legacy.sqlite3"
