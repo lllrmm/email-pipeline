@@ -69,28 +69,35 @@ class StageBoundaryTests(unittest.TestCase):
             unpack_bytes = json.dumps(unpack).encode("utf-8")
             unpack_path.write_bytes(unpack_bytes)
             summary = {
-                "artifact_type": "mail_summary",
-                "source_unpack_sha256": hashlib.sha256(unpack_bytes).hexdigest(),
-                "summary_model": "test-model",
-                "messages": [{
-                    "folder": "Inbox",
-                    "id": "42",
-                    "message_id": "message@example",
-                    "deepseek_summary": {
-                        "importance": "urgent",
-                        "deadlines": [],
-                        "should_read_full": True,
-                        "summary": "Test summary",
-                    },
-                }],
+                "artifact_type": "mail_daily_summary",
+                "processor": {"processor": "opencode", "session_id": "ses-test"},
+                "daily_summary": {
+                    "date": "2026-09-25",
+                    "overview": "Test summary",
+                    "urgent_items": [],
+                    "events": [],
+                    "deadlines": [],
+                    "actions": [],
+                    "warnings": [],
+                    "messages_total": 1,
+                    "messages_requiring_review": 0,
+                },
             }
             summary_path.write_text(json.dumps(summary), encoding="utf-8")
 
-            bundle_path, bundle, important = orchestrator.materialize_bundle(unpack_path, summary_path)
+            bundle_path, bundle, daily_summary = orchestrator.materialize_bundle(unpack_path, summary_path)
 
             self.assertEqual(bundle["artifact_type"], "mail_digest")
-            self.assertEqual(bundle["messages"][0]["deepseek_summary"]["summary"], "Test summary")
-            self.assertEqual(len(important), 1)
+            self.assertEqual(daily_summary["overview"], "Test summary")
+            self.assertEqual(bundle["message_index"][0]["subject"], "Test")
+            forbidden = {
+                "size", "raw_path", "eml_path", "attachment_manifest_path",
+                "attachment_text_path", "body_original_chars", "body_extracted_chars",
+                "links", "images", "attachments",
+            }
+            encoded = json.dumps(bundle)
+            for key in forbidden:
+                self.assertNotIn(f'"{key}"', encoded)
             self.assertTrue(bundle_path.exists())
 
 

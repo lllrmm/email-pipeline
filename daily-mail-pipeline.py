@@ -74,49 +74,51 @@ def message_key(message: dict[str, Any]) -> tuple[str, str, str]:
 def materialize_bundle(
     unpack_path: Path,
     summary_path: Path | None,
-) -> tuple[Path, dict[str, Any], list[dict[str, Any]]]:
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     unpack_bytes = unpack_path.read_bytes()
     unpack = json.loads(unpack_bytes)
     summary: dict[str, Any] | None = None
-    summary_map: dict[tuple[str, str, str], dict[str, Any]] = {}
+    daily_summary: dict[str, Any]
     if summary_path:
         summary = json.loads(summary_path.read_bytes())
-        if summary.get("source_unpack_sha256") != hashlib.sha256(unpack_bytes).hexdigest():
-            raise RuntimeError(f"summary does not match unpack artifact: {summary_path}")
-        summary_map = {
-            message_key(item): item.get("deepseek_summary") or {}
-            for item in summary.get("messages") or []
+        daily_summary = dict(summary.get("daily_summary") or {})
+    else:
+        daily_summary = {
+            "date": unpack.get("date"),
+            "overview": "摘要阶段未运行。",
+            "urgent_items": [],
+            "events": [],
+            "deadlines": [],
+            "actions": [],
+            "warnings": ["summary_disabled"],
+            "messages_total": unpack.get("messages_total", 0),
+            "messages_requiring_review": unpack.get("messages_total", 0),
         }
 
-    merged_messages: list[dict[str, Any]] = []
-    important: list[dict[str, Any]] = []
-    for source in unpack.get("messages") or []:
-        message = dict(source)
-        digest = summary_map.get(message_key(message), dict(SUMMARY_DISABLED))
-        message["deepseek_summary"] = digest
-        merged_messages.append(message)
-        if digest.get("importance") == "urgent" or digest.get("deadlines") or digest.get("should_read_full"):
-            important.append({
-                "folder": message.get("folder"),
-                "id": message.get("id"),
-                "subject": message.get("subject"),
-                "date": message.get("date"),
-                "summary": digest,
-                "raw_path": message.get("raw_path"),
-            })
-
-    bundle = dict(unpack)
-    bundle.update({
+    message_index = [
+        {
+            "folder": item.get("folder"),
+            "id": item.get("id"),
+            "subject": item.get("subject"),
+            "date": item.get("date"),
+        }
+        for item in unpack.get("messages") or []
+    ]
+    bundle = {
+        "schema_version": 3,
         "artifact_type": "mail_digest",
-        "source_unpack_path": str(unpack_path),
-        "source_unpack_sha256": hashlib.sha256(unpack_bytes).hexdigest(),
-        "source_summary_path": str(summary_path) if summary_path else None,
-        "summary_model": summary.get("summary_model") if summary else None,
-        "messages": merged_messages,
-    })
+        "date": unpack.get("date"),
+        "generated_at": unpack.get("generated_at"),
+        "messages_total": unpack.get("messages_total", len(message_index)),
+        "mailboxes_total": unpack.get("mailboxes_total"),
+        "mailboxes_failed": unpack.get("mailboxes_failed") or [],
+        "daily_summary": daily_summary,
+        "message_index": message_index,
+        "summary_processor": summary.get("processor") if summary else None,
+    }
     bundle_path = unpack_path.with_name("bundle.json")
     secure_write_text(bundle_path, json.dumps(bundle, ensure_ascii=False, indent=2))
-    return bundle_path, bundle, important
+    return bundle_path, bundle, daily_summary
 
 
 def main() -> int:
@@ -168,7 +170,7 @@ def main() -> int:
                     "--config", str(args.config.expanduser()),
                 ])
                 summary_path = Path(summary_result["summary_path"])
-            bundle_path, bundle, important = materialize_bundle(unpack_path, summary_path)
+            bundle_path, bundle, daily_summary = materialize_bundle(unpack_path, summary_path)
             total_messages += int(bundle.get("messages_total") or 0)
             per_day.append({
                 "date": bundle.get("date"),
@@ -176,7 +178,7 @@ def main() -> int:
                 "unpack_path": str(unpack_path),
                 "summary_path": str(summary_path) if summary_path else None,
                 "messages_total": bundle.get("messages_total"),
-                "important_or_needs_verification": important,
+                "daily_summary": daily_summary,
             })
     except Exception as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
@@ -186,18 +188,22 @@ def main() -> int:
         item = per_day[0]
         print(json.dumps({
             "ok": True,
-            "bundle_path": item["bundle_path"],
-            "unpack_path": item["unpack_path"],
-            "summary_path": item["summary_path"],
             "messages_total": item["messages_total"],
-            "important_or_needs_verification": item["important_or_needs_verification"],
+            "daily_summary": item["daily_summary"],
         }, ensure_ascii=False, indent=2))
     else:
         print(json.dumps({
             "ok": True,
             "mode": "range",
             "messages_total": total_messages,
-            "per_day": per_day,
+            "per_day": [
+                {
+                    "date": item["date"],
+                    "messages_total": item["messages_total"],
+                    "daily_summary": item["daily_summary"],
+                }
+                for item in per_day
+            ],
         }, ensure_ascii=False, indent=2))
     return 0
 

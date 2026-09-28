@@ -289,6 +289,48 @@ def main() -> int:
             index, value = future.result()
             results[index] = value
 
+    if backend == "opencode":
+        private_messages = []
+        for mail, item in zip(messages, results):
+            digest = dict((item or {}).get("deepseek_summary") or {})
+            digest.pop("links", None)
+            private_messages.append({
+                "folder": mail.get("folder"),
+                "id": mail.get("id"),
+                "subject": mail.get("subject"),
+                "date": mail.get("date"),
+                "analysis": digest,
+            })
+        individual_path = input_path.with_name("individual-results.json")
+        secure_write_text(individual_path, json.dumps({
+            "date": unpack.get("date"),
+            "messages_total": len(private_messages),
+            "messages": private_messages,
+        }, ensure_ascii=False, indent=2))
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "opencode-daily-summary.py"),
+                "--input", str(individual_path),
+                "--output", str(output_path),
+                "--config", str(config_path),
+            ],
+            stdin=subprocess.DEVNULL,
+            text=True,
+            capture_output=True,
+            timeout=int((cfg.get("opencode") or {}).get("timeout_seconds") or 600) + 60,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(f"OpenCode daily aggregation failed: {completed.stderr[-1000:]} {completed.stdout[-1000:]}")
+        print(json.dumps({
+            "ok": True,
+            "summary_path": str(output_path),
+            "messages_total": len(messages),
+            "errors": sum(1 for item in results if (item or {}).get("deepseek_summary", {}).get("error")),
+        }, ensure_ascii=False, indent=2))
+        return 0
+
     summary_bundle = {
         "schema_version": 2,
         "artifact_type": "mail_summary",

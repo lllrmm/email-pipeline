@@ -72,6 +72,13 @@ The agent has broad read/analysis capability inside its one-message workspace,
 but no generic shell, external-directory access, mailbox mutation, or browser
 session with cookies.
 
+After all per-email sessions finish, a second OpenCode agent named
+`mail-daily-aggregator` reads a private `individual-results.json`, deduplicates
+events/deadlines/actions, and writes the public `summary.json`. The public
+summary, compatibility bundle, and Cron stdout intentionally exclude raw mail
+paths, EML paths, attachment manifests/text paths, sizes, extraction counters,
+links, images, and attachment inventories.
+
 ## Test
 
 ```bash
