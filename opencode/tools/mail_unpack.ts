@@ -4,7 +4,7 @@ export default tool({
   description: "Losslessly unpack message.eml into MIME parts, attachments, and manifest.json.",
   args: {},
   async execute(_args, context) {
-    const script = `${process.env.HERMES_HOME || `${process.env.HOME}/.hermes`}/scripts/email-pipeline/email-pipeline.py`
+    const script = `${process.env.EMAIL_PIPELINE_CODE_ROOT || `${process.env.HOME}/email-pipeline-code`}/email-pipeline.py`
     const proc = Bun.spawn(["python3", script, "tools", "unpack", "--workspace", context.directory], { stdout: "pipe", stderr: "pipe" })
     const stdout = await new Response(proc.stdout).text()
     const stderr = await new Response(proc.stderr).text()

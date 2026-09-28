@@ -16,9 +16,10 @@ from zoneinfo import ZoneInfo
 from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
+from email_pipeline.paths import daily_root, database_path as default_database_path  # noqa: E402
 
 DEFAULT_CONFIG = default_config_path()
-DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes/email/daily"
+DEFAULT_OUTPUT_ROOT = daily_root()
 
 
 def run_stage(command: list[str]) -> dict[str, Any]:
@@ -38,7 +39,7 @@ def enqueue_scan_result(result: dict[str, Any], config_path: Path) -> dict[str, 
     identity_cfg = config.get("identity") or {}
     account = str(identity_cfg.get("account") or "outlook")
     database = Path(
-        identity_cfg.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")
+        identity_cfg.get("database_path") or default_database_path()
     ).expanduser().resolve()
     index = MailIdentityIndex(database)
     queued = skipped = 0

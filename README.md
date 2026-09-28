@@ -16,8 +16,8 @@ python3 email-pipeline.py aggregate-day --date YYYY-MM-DD
 python3 email-pipeline.py lookup --pipeline-id ID
 ```
 
-The installed runtime is `~/.hermes/scripts/email-pipeline/`. Configuration is
-`daily-mail-pipeline.toml`; summarizer and aggregator prompts are separate text files.
+Code is installed under `~/email-pipeline-code/`, configuration under
+`~/.email-pipeline/`, and runtime data under `~/email-pipeline/`.
 
 ## Package Layout
 
@@ -67,7 +67,7 @@ SQLite has four business tables: `email`, `email_location`,
 ## Data Layout
 
 ```text
-~/.hermes/email/daily/YYYY-MM-DD/
+~/email-pipeline/daily/YYYY-MM-DD/
 ├── emails/<pipeline_id>/
 │   ├── request.json
 │   ├── message.eml

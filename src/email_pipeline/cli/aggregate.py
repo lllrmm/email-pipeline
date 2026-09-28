@@ -18,6 +18,7 @@ from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.daily_schema import validate_daily_summary  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, filename_timestamp, format_rfc3339, now_rfc3339  # noqa: E402
+from email_pipeline.paths import credential_env_path, opencode_runtime_root  # noqa: E402
 
 DEFAULT_CONFIG = default_config_path()
 
@@ -102,7 +103,7 @@ def resolve_key(stage_cfg: dict[str, Any]) -> str:
     inline_value = str(model.get("api_key") or "").strip()
     if inline_value:
         return inline_value
-    for line in (Path.home() / ".hermes" / ".env").read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in credential_env_path().read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith(f"{env_name}="):
             return line.split("=", 1)[1].strip().strip('"').strip("'")
     raise RuntimeError(f"credential not found: {env_name}")
@@ -234,7 +235,7 @@ def main() -> int:
     model_name = str(model_cfg.get("name") or "deepseek-flash")
     model = f"{provider}/{model_name}"
     timeout = int(oc.get("timeout_seconds") or 600)
-    runtime_root = Path(oc.get("runtime_root") or (Path.home() / ".hermes" / "opencode-email-runtime")).expanduser().resolve()
+    runtime_root = Path(oc.get("runtime_root") or opencode_runtime_root()).expanduser().resolve()
     runtime_config = runtime_root / "config"
     aggregate_id = hashlib.sha256(str(workdir).encode("utf-8")).hexdigest()[:16]
     runtime_instance = runtime_root / "aggregations" / aggregate_id

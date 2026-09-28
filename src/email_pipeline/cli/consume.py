@@ -21,6 +21,7 @@ from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 from email_pipeline.services.registry import register_mail  # noqa: E402
 from email_pipeline.config import default_config_path  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
+from email_pipeline.paths import daily_root, database_path as default_database_path, salt_path as default_salt_path  # noqa: E402
 
 STOP = False
 CONFIG_PATH = default_config_path()
@@ -41,11 +42,11 @@ def event_day(event: dict, timezone_name: str) -> str:
 
 def process_event(event: dict, config: dict, config_path: Path, index: MailIdentityIndex, timezone_name: str) -> str:
     identity_cfg = config.get("identity") or {}
-    salt_path = Path(identity_cfg.get("salt_path") or (Path.home() / ".hermes/email/pipeline-id-salt")).expanduser().resolve()
+    salt_path = Path(identity_cfg.get("salt_path") or default_salt_path()).expanduser().resolve()
     result = register_mail(event["rfc_message_id"], event["folder"], int(event["uidvalidity"]), int(event["imap_uid"]), account=str(identity_cfg.get("account") or "outlook"), salt=get_or_create_salt(salt_path), database_path=index.path)
     pipeline_id = result["pipeline_id"]
     day = event_day(event, timezone_name)
-    proposed_dir = Path.home() / ".hermes/email/daily" / day / "emails" / pipeline_id
+    proposed_dir = daily_root() / day / "emails" / pipeline_id
     workspace = index.ensure_workspace(pipeline_id, day, proposed_dir)
     day = workspace["date"]
     mail_dir = Path(workspace["path"])
@@ -74,7 +75,7 @@ def main() -> int:
     config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
     config = load_config(config_path)
     identity = config.get("identity") or {}
-    database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
+    database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
     timezone_name = str(config.get("timezone") or "UTC")
     concurrency = max(1, int((config.get("summarizer") or {}).get("concurrency") or 1))
     configure_program_timezone(timezone_name)

@@ -12,6 +12,7 @@ from pathlib import Path
 from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id, normalize_rfc_message_id  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
+from email_pipeline.paths import database_path as default_database_path, salt_path as default_salt_path  # noqa: E402
 
 DEFAULT_CONFIG = default_config_path()
 
@@ -67,8 +68,8 @@ def main() -> int:
     config = load_config(args.config.expanduser().resolve())
     configure_program_timezone(str(config.get("timezone") or "UTC"))
     identity = config.get("identity") or {}
-    database_path = Path(identity.get("database_path") or (Path.home() / ".hermes" / "email" / "mail-index.sqlite3")).expanduser().resolve()
-    salt_path = Path(identity.get("salt_path") or (Path.home() / ".hermes" / "email" / "pipeline-id-salt")).expanduser().resolve()
+    database_path = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
+    salt_path = Path(identity.get("salt_path") or default_salt_path()).expanduser().resolve()
     result = register_mail(
         args.rfc_message_id,
         args.folder,

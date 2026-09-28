@@ -8,11 +8,12 @@ import json
 from pathlib import Path
 
 from email_pipeline.mail_identity import MailIdentityIndex
+from email_pipeline.paths import database_path
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--database", type=Path, default=Path.home() / ".hermes" / "email" / "mail-index.sqlite3")
+    parser.add_argument("--database", type=Path, default=database_path())
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--pipeline-id")
     group.add_argument("--rfc-message-id")

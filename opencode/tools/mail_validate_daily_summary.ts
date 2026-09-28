@@ -6,7 +6,7 @@ export default tool({
     summary_json: tool.schema.string().describe("The complete candidate daily summary as a JSON string"),
   },
   async execute(args, context) {
-    const script = `${process.env.HERMES_HOME || `${process.env.HOME}/.hermes`}/scripts/email-pipeline/email-pipeline.py`
+    const script = `${process.env.EMAIL_PIPELINE_CODE_ROOT || `${process.env.HOME}/email-pipeline-code`}/email-pipeline.py`
     const proc = Bun.spawn([
       "python3", script, "tools", "validate-daily-summary",
       "--workspace", context.directory,

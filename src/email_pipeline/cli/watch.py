@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import datetime as dt
-import json
 import os
 import signal
 import sys
@@ -18,9 +17,9 @@ from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E4
 from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, normalize_rfc_message_id  # noqa: E402
+from email_pipeline.paths import daily_root, database_path as default_database_path  # noqa: E402
 
 CONFIG_PATH = default_config_path()
-STATE_PATH = Path.home() / ".hermes" / "email" / "watch-state.json"
 STOP = False
 LOGGER = __import__("logging").getLogger("email_pipeline.watcher")
 
@@ -78,20 +77,15 @@ def main() -> int:
     boundary_timezone = str(config.get("timezone") or "UTC")
     configure_program_timezone(boundary_timezone)
     global LOGGER
-    LOGGER = configure_daily_logger(Path.home() / ".hermes" / "email" / "daily", "watcher", boundary_timezone)
+    LOGGER = configure_daily_logger(daily_root(), "watcher", boundary_timezone)
     watch = config.get("watcher") or {}
     poll_seconds = max(15, int(watch.get("poll_seconds") or 60))
     debounce_seconds = max(1, int(watch.get("debounce_seconds") or 10))
     identity = config.get("identity") or {}
     account = str(identity.get("account") or "outlook")
-    database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
+    database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
     index = MailIdentityIndex(database)
     previous = index.load_watch_snapshot(account)
-    if not previous and STATE_PATH.is_file():
-        previous = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        index.replace_watch_snapshot(account, previous)
-        STATE_PATH.unlink()
-        LOGGER.info("migrated_json_watch_state folders=%d", len(previous))
     LOGGER.info("watcher_start mode=all_folder_uidnext_poll poll_seconds=%d debounce_seconds=%d", poll_seconds, debounce_seconds)
     while not STOP:
         try:

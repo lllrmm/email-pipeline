@@ -6,6 +6,7 @@ import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
+from .paths import token_refresh_path
 
 def imap_config(config: dict[str, Any]) -> dict[str, Any]:
     value = config.get("imap") or {}
@@ -14,7 +15,7 @@ def imap_config(config: dict[str, Any]) -> dict[str, Any]:
         "port": int(value.get("port") or 993),
         "ssl": bool(value.get("ssl", True)),
         "username": str(value.get("username") or ""),
-        "token_command": str(value.get("token_command") or (Path.home() / ".hermes" / "email" / "outlook-token-refresh.sh")),
+        "token_command": str(value.get("token_command") or token_refresh_path()),
     }
 
 

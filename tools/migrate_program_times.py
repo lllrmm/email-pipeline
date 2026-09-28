@@ -22,6 +22,7 @@ if str(SCRIPT_DIR / "src") not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR / "src"))
 
 from email_pipeline.config import load_config  # noqa: E402
+from email_pipeline.paths import database_path as default_database_path  # noqa: E402
 
 
 PROGRAM_TIME_KEYS = {
@@ -170,7 +171,7 @@ def main() -> int:
     config = load_config(args.config.expanduser().resolve())
     timezone = ZoneInfo(str(config.get("timezone") or "UTC"))
     identity = config.get("identity") or {}
-    database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
+    database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
     root = args.output_root.expanduser().resolve()
     database_fields = migrate_database(database, timezone)
     json_files, json_fields = migrate_json_files(root, timezone)

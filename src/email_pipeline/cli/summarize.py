@@ -17,6 +17,7 @@ from typing import Any
 from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, now, now_rfc3339  # noqa: E402
+from email_pipeline.paths import credential_env_path, opencode_runtime_root  # noqa: E402
 
 DEFAULT_CONFIG = default_config_path()
 
@@ -51,7 +52,7 @@ def resolve_email_key(stage_cfg: dict[str, Any]) -> str:
     inline_value = str(model.get("api_key") or "").strip()
     if inline_value:
         return inline_value
-    env_path = Path.home() / ".hermes" / ".env"
+    env_path = credential_env_path()
     for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith(f"{env_name}="):
             return line.split("=", 1)[1].strip().strip('"').strip("'")
@@ -144,7 +145,7 @@ def main() -> int:
     timeout = int(opencode_cfg.get("timeout_seconds") or 600)
     runtime_root = Path(
         opencode_cfg.get("runtime_root")
-        or (Path.home() / ".hermes" / "opencode-email-runtime")
+        or opencode_runtime_root()
     ).expanduser().resolve()
     runtime_config = runtime_root / "config"
 
@@ -191,10 +192,10 @@ def main() -> int:
     ]
     env = dict(os.environ)
     env["DEEPSEEK_API_KEY"] = resolve_email_key(stage_cfg)
-    env["HERMES_HOME"] = str(Path.home() / ".hermes")
+    env["EMAIL_PIPELINE_CONFIG_ROOT"] = str(args.config.expanduser().resolve().parent)
     env["PATH"] = os.pathsep.join([
         str(Path.home() / ".local" / "bin"),
-        str(Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin"),
+        str(Path(sys.executable).resolve().parent),
         env.get("PATH", ""),
     ])
     env["HOME"] = str(runtime_home)

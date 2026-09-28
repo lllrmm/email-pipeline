@@ -17,9 +17,10 @@ from zoneinfo import ZoneInfo
 from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
+from email_pipeline.paths import daily_root, database_path as default_database_path  # noqa: E402
 
 DEFAULT_CONFIG = default_config_path()
-DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes/email/daily"
+DEFAULT_OUTPUT_ROOT = daily_root()
 
 
 def parse_timestamp(value: Any) -> dt.datetime | None:
@@ -129,7 +130,7 @@ def main() -> int:
     target_date = args.date or dt.datetime.now(timezone).date().isoformat()
     dt.date.fromisoformat(target_date)
     identity = config.get("identity") or {}
-    database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
+    database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
     index = MailIdentityIndex(database)
     try:
         events = wait_for_done(

@@ -5,11 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/.hermes/scripts/email-pipeline
-ExecStart=%h/.hermes/hermes-agent/venv/bin/python %h/.hermes/scripts/email-pipeline/email-pipeline.py consume
+WorkingDirectory=%h/email-pipeline-code
+ExecStart=%h/email-pipeline-code/.venv/bin/python %h/email-pipeline-code/email-pipeline.py consume
 Restart=always
 RestartSec=15
 Environment=PYTHONUNBUFFERED=1
+Environment=EMAIL_PIPELINE_CODE_ROOT=%h/email-pipeline-code
+Environment=EMAIL_PIPELINE_CONFIG_ROOT=%h/.email-pipeline
+Environment=EMAIL_PIPELINE_DATA_ROOT=%h/email-pipeline
 
 [Install]
 WantedBy=default.target

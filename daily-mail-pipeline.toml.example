@@ -12,10 +12,8 @@ api_key = ""
 api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"
 
 [summarizer.opencode]
-executable = "/home/daniel/.opencode/bin/opencode"
 agent = "mail-analyzer"
 timeout_seconds = 600
-runtime_root = "/home/daniel/.hermes/opencode-email-runtime"
 
 [aggregator]
 system_prompt_file = "aggregator-system-prompt.txt"
@@ -28,10 +26,8 @@ api_key = ""
 api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"
 
 [aggregator.opencode]
-executable = "/home/daniel/.opencode/bin/opencode"
 agent = "mail-daily-aggregator"
 timeout_seconds = 600
-runtime_root = "/home/daniel/.hermes/opencode-email-runtime"
 
 [scanner]
 concurrency = 1
@@ -41,7 +37,6 @@ host = "outlook.office365.com"
 port = 993
 ssl = true
 username = "rlidf@connect.ust.hk"
-token_command = "/home/daniel/.hermes/email/outlook-token-refresh.sh"
 concurrency = 1
 
 [watcher]
@@ -50,8 +45,6 @@ debounce_seconds = 10
 
 [identity]
 account = "outlook"
-salt_path = "/home/daniel/.hermes/email/pipeline-id-salt"
-database_path = "/home/daniel/.hermes/email/mail-index.sqlite3"
 
 [throttle]
 scan_delay_seconds = 0.0

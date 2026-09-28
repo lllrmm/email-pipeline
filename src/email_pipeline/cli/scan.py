@@ -19,9 +19,10 @@ from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E4
 from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import normalize_rfc_message_id  # noqa: E402
+from email_pipeline.paths import daily_root  # noqa: E402
 
 DEFAULT_CONFIG = default_config_path()
-DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes" / "email" / "daily"
+DEFAULT_OUTPUT_ROOT = daily_root()
 LOGGER = __import__("logging").getLogger("email_pipeline.scanner")
 
 

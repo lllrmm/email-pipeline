@@ -21,7 +21,8 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import requests
-from .config import CONFIG_FILENAME, load_config
+from .config import load_config
+from .paths import config_path
 from .mime_extract import extract_attachment_text, normalize_space, secure_write_bytes, secure_write_text
 from .daily_schema import validation_result
 from .mail_identity import MailIdentityIndex
@@ -116,9 +117,7 @@ def command_fetch(workspace: Path) -> dict[str, Any]:
             continue
         for attempt in range(3):
             try:
-                hermes_home = Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
-                config_path = hermes_home / "scripts" / "email-pipeline" / CONFIG_FILENAME
-                config = load_config(config_path)
+                config = load_config(config_path())
                 data = fetch_raw(config, folder, int(uidvalidity), int(uid))
                 secure_write_bytes(eml_path, data)
                 digest = hashlib.sha256(data).hexdigest()
