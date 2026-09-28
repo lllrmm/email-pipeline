@@ -32,6 +32,12 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('"--pipeline-id"', source)
         self.assertIn('"--agent-workdir"', source)
         self.assertIn('"--output"', source)
+        self.assertIn('get("concurrency") or 8', source)
+
+    def test_agentic_output_path_is_caller_selected_inside_workspace(self) -> None:
+        source = (ROOT / "summarize-mail-agentic.py").read_text(encoding="utf-8")
+        self.assertNotIn("output_path.name", source)
+        self.assertIn("workspace not in output_path.parents", source)
 
     def test_orchestrator_has_no_provider_or_parser_dependency(self) -> None:
         source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")

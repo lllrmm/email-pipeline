@@ -56,7 +56,7 @@ def run_stage(command: list[str]) -> dict[str, Any]:
 def run_agentic_summaries(index_path: Path, config_path: Path) -> Path:
     index = json.loads(index_path.read_text(encoding="utf-8"))
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    workers = max(1, int((config.get("opencode") or {}).get("concurrency") or 2))
+    workers = max(1, int((config.get("opencode") or {}).get("concurrency") or 8))
     messages = list(index.get("messages") or [])
     completed_ids: list[str | None] = [None] * len(messages)
 

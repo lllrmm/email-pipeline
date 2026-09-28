@@ -13,7 +13,7 @@ opencode:
   agent: "mail-analyzer"
   model: "deepseek/deepseek-flash"
   timeout_seconds: 600
-  concurrency: 2
+  concurrency: 8
   runtime_root: "/home/daniel/.hermes/opencode-email-runtime"
   himalaya_config: "/home/daniel/.config/himalaya/config.toml"
 

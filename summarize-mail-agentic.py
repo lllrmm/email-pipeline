@@ -153,8 +153,6 @@ def main() -> int:
         raise RuntimeError("pipeline_id does not match request.json")
     if output_path != workspace and workspace not in output_path.parents:
         raise RuntimeError("output path must stay inside the agent work directory")
-    if output_path.name != "summary.json" or output_path.parent != workspace:
-        raise RuntimeError("single-email output must be <agent-workdir>/summary.json")
     run_id = f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
     run_dir = workspace / "opencode-run"
     run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)

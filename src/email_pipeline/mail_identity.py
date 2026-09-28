@@ -49,10 +49,6 @@ def make_pipeline_id(salt: bytes, rfc_message_id: str) -> str:
     return hashlib.sha256(salt + b"\0" + normalized.encode("utf-8", errors="strict")).hexdigest()
 
 
-def make_synthetic_identity(account: str, folder: str, himalaya_id: str, date: str) -> str:
-    return f"synthetic:{account}\0{folder}\0{himalaya_id}\0{date}"
-
-
 class MailIdentityIndex:
     def __init__(self, path: Path) -> None:
         self.path = path

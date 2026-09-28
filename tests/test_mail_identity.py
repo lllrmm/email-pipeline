@@ -2,12 +2,32 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import importlib.util
 from pathlib import Path
 
 from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id
 
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location("index_mail", ROOT / "index-mail.py")
+assert SPEC and SPEC.loader
+INDEX_MAIL = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(INDEX_MAIL)
+
 
 class MailIdentityTests(unittest.TestCase):
+    def test_missing_rfc_message_id_is_a_hard_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with self.assertRaisesRegex(RuntimeError, "RFC Message-ID missing"):
+                INDEX_MAIL.process_message(
+                    "Inbox",
+                    {"id": "42", "subject": "No id", "date": "2026-09-28T00:00:00Z"},
+                    root,
+                    account="outlook",
+                    salt=b"x" * 32,
+                    index_path=root / "index.sqlite3",
+                )
+
     def test_salted_id_is_stable_and_index_is_bidirectional(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

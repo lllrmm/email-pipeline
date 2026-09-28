@@ -38,7 +38,6 @@ from email_pipeline.mail_identity import (  # noqa: E402
     MailIdentityIndex,
     get_or_create_salt,
     make_pipeline_id,
-    make_synthetic_identity,
 )
 
 # Ensure user-local binaries (himalaya lives in ~/.local/bin) are reachable
@@ -207,13 +206,10 @@ def process_message(
     msg_id = str(env.get("id"))
     observed_date = envelope_local_date(env, dt.datetime.now().astimezone().tzinfo) or str(env.get("date") or "")[:10]
     rfc_message_id = str(env.get("message-id") or "").strip() or None
-    if rfc_message_id:
-        identity_value = rfc_message_id
-        identity_source = "rfc_message_id"
-    else:
-        identity_value = make_synthetic_identity(account, folder, msg_id, observed_date)
-        identity_source = "synthetic"
-    pipeline_id = make_pipeline_id(salt, identity_value)
+    if not rfc_message_id:
+        raise RuntimeError(f"RFC Message-ID missing for envelope {folder}/{msg_id}")
+    identity_source = "rfc_message_id"
+    pipeline_id = make_pipeline_id(salt, rfc_message_id)
     index = MailIdentityIndex(index_path)
     index.record(
         pipeline_id=pipeline_id,
@@ -401,17 +397,14 @@ def main() -> int:
 
     def job(item: tuple[str, int, int, dict[str, Any]]) -> tuple[str, int, int, dict[str, Any]]:
         day, fi, ei, env = item
-        try:
-            mail = process_message(
-                mailboxes[fi],
-                env,
-                out_dirs[day],
-                account=account_name,
-                salt=salt,
-                index_path=database_path,
-            )
-        except Exception as e:
-            mail = {"unpack_error": f"worker_failed: {e}"}
+        mail = process_message(
+            mailboxes[fi],
+            env,
+            out_dirs[day],
+            account=account_name,
+            salt=salt,
+            index_path=database_path,
+        )
         with progress_lock:
             progress["done"] += 1
             if progress["done"] % 25 == 0 or progress["done"] == len(pending):
