@@ -174,6 +174,7 @@ def main() -> int:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--no-summary", action="store_true")
     parser.add_argument("--no-aggregation", action="store_true")
+    parser.add_argument("--scan-log", type=Path)
     args = parser.parse_args()
 
     index_command = [
@@ -190,12 +191,14 @@ def main() -> int:
         index_command.extend(["--mailbox", mailbox])
 
     try:
-        index_result = run_stage(index_command)
-        scan_log_paths = []
-        if index_result.get("mode") == "range":
-            scan_log_paths = [Path(item["scan_log_path"]) for item in index_result.get("per_day") or []]
+        if args.scan_log:
+            scan_log_paths = [args.scan_log.expanduser().resolve()]
         else:
-            scan_log_paths = [Path(index_result["scan_log_path"])]
+            index_result = run_stage(index_command)
+            if index_result.get("mode") == "range":
+                scan_log_paths = [Path(item["scan_log_path"]) for item in index_result.get("per_day") or []]
+            else:
+                scan_log_paths = [Path(index_result["scan_log_path"])]
 
         per_day: list[dict[str, Any]] = []
         total_messages = 0
