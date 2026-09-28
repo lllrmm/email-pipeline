@@ -1,4 +1,4 @@
-"""Logging handler that writes into UTC date-partitioned component folders."""
+"""Logging handler that writes into device-local date component folders."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 
-class UtcDailyFileHandler(logging.Handler):
+class LocalDailyFileHandler(logging.Handler):
     def __init__(self, output_root: Path, component: str) -> None:
         super().__init__()
         self.output_root = output_root.expanduser().resolve()
@@ -16,7 +16,7 @@ class UtcDailyFileHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            day = dt.datetime.now(dt.timezone.utc).date().isoformat()
+            day = dt.datetime.now().astimezone().date().isoformat()
             directory = self.output_root / day / "logs" / self.component
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             directory.chmod(0o700)
@@ -33,9 +33,9 @@ def configure_daily_logger(output_root: Path, component: str) -> logging.Logger:
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
     logger.propagate = False
-    handler = UtcDailyFileHandler(output_root, component)
-    formatter = logging.Formatter("%(asctime)sZ %(levelname)s %(name)s %(message)s", "%Y-%m-%dT%H:%M:%S")
-    formatter.converter = __import__("time").gmtime
+    handler = LocalDailyFileHandler(output_root, component)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s", "%Y-%m-%dT%H:%M:%S%z")
+    formatter.default_msec_format = None
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     return logger
