@@ -47,6 +47,22 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertNotIn('identity.get("summarized")', indexer)
         self.assertNotIn('identity.get("summarized")', summarizer)
 
+    def test_index_mail_accepts_only_rfc_identity_inputs(self) -> None:
+        indexer = (ROOT / "index_mail.py").read_text(encoding="utf-8")
+        scanner = (ROOT / "scan_mails.py").read_text(encoding="utf-8")
+
+        self.assertIn('parser.add_argument("--rfc-message-id"', indexer)
+        self.assertIn('parser.add_argument("--database"', indexer)
+        self.assertIn('parser.add_argument("--salt-path"', indexer)
+        self.assertNotIn('parser.add_argument("--folder"', indexer)
+        self.assertNotIn('parser.add_argument("--envelope-json"', indexer)
+        self.assertNotIn("record_location", indexer)
+        self.assertNotIn("record_workspace", indexer)
+        self.assertNotIn("update_metadata", indexer)
+        self.assertIn("register_rfc_message_id", scanner)
+        self.assertIn("record_location", scanner)
+        self.assertIn("record_workspace", scanner)
+
     def test_agentic_output_path_is_caller_selected_inside_workspace(self) -> None:
         source = (ROOT / "summarize-mail-agentic.py").read_text(encoding="utf-8")
         self.assertNotIn("output_path.name", source)

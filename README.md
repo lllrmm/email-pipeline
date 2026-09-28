@@ -17,7 +17,7 @@ Read-only Outlook email extraction and digest pipeline for Hermes Agent.
 
 ```text
 scan_mails.py                      Envelope scan + stable identity/workspace index
-index_mail.py                      Register one envelope in SQLite and its workspace
+index_mail.py                      Register one RFC Message-ID and return pipeline_id/status
 mail-index.py                      pipeline_id / RFC Message-ID lookup CLI
 summarize-mail-agentic.py          One pipeline_id + workdir + JSON output
 daily-mail-pipeline.py             Compatibility orchestrator
@@ -31,15 +31,17 @@ tests/                             Synthetic MIME regression tests
 ```text
 Outlook envelope metadata
     -> scan_mails.py
-    -> index_mail.py registers each envelope
+    -> index_mail.py registers each RFC Message-ID
     -> scan-log/scan-<generated UTC time>.json + emails/<pipeline_id>/request.json
     -> daily-mail-pipeline.py calls summarize-mail-agentic.py per pipeline_id
     -> aggregation/aggregation-<generated UTC time>.json
 ```
 
-`scan_mails.py` owns mailbox scanning and incremental summary classification.
-`index_mail.py` only registers one envelope in SQLite and creates its fixed
-workspace request; it does not inspect summarized state. Neither script reads
+`scan_mails.py` owns mailbox scanning, envelope location/metadata persistence,
+workspace creation, and incremental summary classification. `index_mail.py`
+accepts only an RFC Message-ID plus database/salt configuration and returns the
+stable `pipeline_id` with status `registered` or `already_registered`; it does
+not receive folder, Himalaya ID, dates, or workspace data. Neither script reads
 message bodies or unpacks MIME. The single-email
 OpenCode agent owns `mail_fetch`, `mail_unpack`, attachment extraction, and
 link inspection inside `emails/<pipeline_id>/`.
@@ -156,8 +158,9 @@ Himalaya IDs are not part of this interface.
 ```
 
 Each scan log records only the scan run status, timestamps, mailbox failures,
-counts, and `included_pipeline_ids`. Email identity, metadata, IMAP location,
-and workspace information remain authoritative in SQLite.
+counts, `rfc_message_ids`, and the derived pipeline ID partitions. Email
+identity, metadata, IMAP location, and workspace information remain
+authoritative in SQLite.
 
 The stable identity is `SHA256(secret_salt || NUL || rfc_message_id)`. Folder
 names and Himalaya IDs are stored only as mutable transport locations in

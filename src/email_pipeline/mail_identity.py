@@ -142,19 +142,78 @@ class MailIdentityIndex:
         subject: str | None = None,
         sender: str | None = None,
     ) -> None:
+        self.register_identity(
+            pipeline_id=pipeline_id,
+            rfc_message_id=rfc_message_id,
+            identity_source=identity_source,
+        )
+        self.record_location(
+            pipeline_id=pipeline_id,
+            account=account,
+            folder=folder,
+            himalaya_id=himalaya_id,
+            observed_date=observed_date,
+        )
+        if any(value is not None for value in (sent_at, subject, sender)):
+            self.update_metadata(
+                pipeline_id,
+                sent_at=sent_at,
+                subject=subject,
+                sender=sender,
+            )
+
+    def register_identity(
+        self,
+        *,
+        pipeline_id: str,
+        rfc_message_id: str,
+        identity_source: str = "rfc_message_id",
+    ) -> bool:
+        """Register one stable identity and return True only when newly inserted."""
         now = dt.datetime.now(dt.timezone.utc).isoformat()
         with closing(self.connect()) as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 INSERT INTO email_identity
                     (pipeline_id, rfc_message_id, identity_source, first_seen, last_seen)
                 VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(pipeline_id) DO UPDATE SET
-                    rfc_message_id=COALESCE(excluded.rfc_message_id, email_identity.rfc_message_id),
-                    last_seen=excluded.last_seen
+                ON CONFLICT(pipeline_id) DO NOTHING
                 """,
                 (pipeline_id, rfc_message_id, identity_source, now, now),
             )
+            created = cursor.rowcount == 1
+            if not created:
+                existing = connection.execute(
+                    "SELECT rfc_message_id FROM email_identity WHERE pipeline_id=?",
+                    (pipeline_id,),
+                ).fetchone()
+                if existing is None:
+                    raise RuntimeError(f"identity registration failed: {pipeline_id}")
+                existing_rfc = str(existing["rfc_message_id"] or "").strip()
+                if existing_rfc and existing_rfc != rfc_message_id.strip():
+                    raise RuntimeError(f"pipeline ID collision for RFC Message-ID: {pipeline_id}")
+                connection.execute(
+                    """
+                    UPDATE email_identity
+                    SET rfc_message_id=COALESCE(rfc_message_id, ?), last_seen=?
+                    WHERE pipeline_id=?
+                    """,
+                    (rfc_message_id, now, pipeline_id),
+                )
+            connection.commit()
+        return created
+
+    def record_location(
+        self,
+        *,
+        pipeline_id: str,
+        account: str,
+        folder: str,
+        himalaya_id: str,
+        observed_date: str,
+    ) -> None:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with closing(self.connect()) as connection:
             connection.execute(
                 """
                 INSERT INTO email_location
@@ -167,15 +226,6 @@ class MailIdentityIndex:
                 """,
                 (account, folder, himalaya_id, pipeline_id, observed_date, now),
             )
-            if any(value is not None for value in (sent_at, subject, sender)):
-                self._upsert_metadata(
-                    connection,
-                    pipeline_id=pipeline_id,
-                    sent_at=sent_at,
-                    subject=subject,
-                    sender=sender,
-                    updated_at=now,
-                )
             connection.commit()
 
     @staticmethod

@@ -35,7 +35,7 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
 
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt  # noqa: E402
-from index_mail import register_mail  # noqa: E402
+from index_mail import register_rfc_message_id  # noqa: E402
 
 # Ensure user-local binaries (himalaya lives in ~/.local/bin) are reachable
 # regardless of how the script is invoked (cron, non-interactive SSH, etc.).
@@ -182,6 +182,79 @@ def envelope_in_window(env: dict[str, Any], tz: ZoneInfo, start_date: str, next_
     return start_date <= day < next_date
 
 
+def envelope_address_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, list):
+        rendered = [envelope_address_text(item) for item in value]
+        return ", ".join(item for item in rendered if item) or None
+    if isinstance(value, dict):
+        name = str(value.get("name") or "").strip()
+        address = str(value.get("addr") or value.get("address") or value.get("email") or "").strip()
+        if name and address:
+            return f"{name} <{address}>"
+        return address or name or None
+    return str(value).strip() or None
+
+
+def register_scanned_envelope(
+    folder: str,
+    envelope: dict[str, Any],
+    day_dir: Path,
+    *,
+    account: str,
+    salt: bytes,
+    database_path: Path,
+    observed_date: str,
+) -> dict[str, Any]:
+    himalaya_id = str(envelope.get("id") or "").strip()
+    if not himalaya_id:
+        raise RuntimeError(f"Himalaya message ID missing for envelope in {folder}")
+    rfc_message_id = str(envelope.get("message-id") or "").strip()
+    if not rfc_message_id:
+        raise RuntimeError(f"RFC Message-ID missing for envelope {folder}/{himalaya_id}")
+    registration = register_rfc_message_id(
+        rfc_message_id,
+        salt=salt,
+        database_path=database_path,
+    )
+    pipeline_id = registration["pipeline_id"]
+    index = MailIdentityIndex(database_path)
+    index.record_location(
+        pipeline_id=pipeline_id,
+        account=account,
+        folder=folder,
+        himalaya_id=himalaya_id,
+        observed_date=observed_date,
+    )
+    index.update_metadata(
+        pipeline_id,
+        sent_at=str(envelope.get("date") or "").strip() or None,
+        subject=str(envelope.get("subject") or "").strip() or None,
+        sender=envelope_address_text(envelope.get("from")),
+    )
+    mail_dir = day_dir / "emails" / pipeline_id
+    mail_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    index.record_workspace(pipeline_id, observed_date, mail_dir)
+    request = {
+        "pipeline_id": pipeline_id,
+        "rfc_message_id": rfc_message_id,
+        "identity_source": "rfc_message_id",
+        "subject": envelope.get("subject"),
+        "date": envelope.get("date"),
+        "index_database": str(database_path),
+    }
+    secure_write_text(mail_dir / "request.json", json.dumps(request, ensure_ascii=False, indent=2))
+    return {
+        **registration,
+        "rfc_message_id": rfc_message_id,
+        "observed_date": observed_date,
+        "mail_dir": str(mail_dir),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Config & DeepSeek API
 # ---------------------------------------------------------------------------
@@ -276,6 +349,7 @@ def main() -> int:
                 "generated_at": generated_at,
                 "fatal_error": error,
                 "messages_total": 0,
+                "rfc_message_ids": [],
                 "included_pipeline_ids": [],
                 "pending_summary_pipeline_ids": [],
                 "reused_summary_pipeline_ids": [],
@@ -371,7 +445,7 @@ def main() -> int:
 
     def job(item: tuple[str, int, int, dict[str, Any]]) -> tuple[str, int, int, dict[str, Any]]:
         day, fi, ei, env = item
-        mail = register_mail(
+        mail = register_scanned_envelope(
             mailboxes[fi],
             env,
             out_dirs[day],
@@ -406,6 +480,7 @@ def main() -> int:
             if pipeline_id:
                 unique_messages[pipeline_id] = message
         pipeline_ids = list(unique_messages)
+        rfc_message_ids = [str(unique_messages[pipeline_id]["rfc_message_id"]) for pipeline_id in pipeline_ids]
         pending_summary_pipeline_ids: list[str] = []
         reused_summary_pipeline_ids: list[str] = []
         for pipeline_id in pipeline_ids:
@@ -431,6 +506,7 @@ def main() -> int:
             "mailboxes_total": len(mailboxes),
             "mailboxes_failed": mailboxes_failed_out,
             "messages_total": len(pipeline_ids),
+            "rfc_message_ids": rfc_message_ids,
             "included_pipeline_ids": pipeline_ids,
             "pending_summary_pipeline_ids": pending_summary_pipeline_ids,
             "reused_summary_pipeline_ids": reused_summary_pipeline_ids,
@@ -445,6 +521,7 @@ def main() -> int:
         per_day.append({
             "date": d,
             "scan_log_path": str(scan_log_path),
+            "rfc_message_ids": rfc_message_ids,
             "messages_total": len(pipeline_ids),
             "summaries_pending": len(pending_summary_pipeline_ids),
             "summaries_reused": len(reused_summary_pipeline_ids),
@@ -458,6 +535,7 @@ def main() -> int:
             "mailboxes_total": len(mailboxes),
             "mailboxes_failed": mailboxes_failed_out,
             "messages_total": total_messages,
+            "rfc_message_ids": rfc_message_ids,
         }, ensure_ascii=False, indent=2))
     else:
         print(json.dumps({
