@@ -5,9 +5,9 @@ This stage reads envelope metadata only. It never reads message bodies,
 downloads attachments, unpacks MIME, or calls a model.
 
 Usage:
-    python3 index-mail.py                                    # today
-    python3 index-mail.py --date 2026-09-25                  # one day
-    python3 index-mail.py --from 2026-09-01 --to 2026-09-27  # range backfill
+    python3 scan_mails.py                                    # today
+    python3 scan_mails.py --date 2026-09-25                  # one day
+    python3 scan_mails.py --from 2026-09-01 --to 2026-09-27  # range backfill
 """
 from __future__ import annotations
 

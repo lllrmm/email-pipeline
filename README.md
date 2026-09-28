@@ -16,7 +16,7 @@ Read-only Outlook email extraction and digest pipeline for Hermes Agent.
 ## Layout
 
 ```text
-index-mail.py                      Envelope scan + stable identity/workspace index
+scan_mails.py                      Envelope scan + stable identity/workspace index
 mail-index.py                      pipeline_id / RFC Message-ID lookup CLI
 summarize-mail-agentic.py          One pipeline_id + workdir + JSON output
 daily-mail-pipeline.py             Compatibility orchestrator
@@ -29,13 +29,13 @@ tests/                             Synthetic MIME regression tests
 
 ```text
 Outlook envelope metadata
-    -> index-mail.py
+    -> scan_mails.py
     -> scan-log/scan-<generated UTC time>.json + emails/<pipeline_id>/request.json
     -> daily-mail-pipeline.py calls summarize-mail-agentic.py per pipeline_id
     -> aggregation/aggregation-<generated UTC time>.json
 ```
 
-`index-mail.py` never reads message bodies or unpacks MIME. The single-email
+`scan_mails.py` never reads message bodies or unpacks MIME. The single-email
 OpenCode agent owns `mail_fetch`, `mail_unpack`, attachment extraction, and
 link inspection inside `emails/<pipeline_id>/`.
 
@@ -78,7 +78,7 @@ The agent has broad read/analysis capability inside its one-message workspace,
 but no generic shell, external-directory access, mailbox mutation, or browser
 session with cookies.
 
-After all per-email sessions finish, `mails-aggregate-agentic.py` receives the
+After all per-email sessions finish, `aggregate-mails-agentic.py` receives the
 pipeline ID list, date work directory, and output path. The
 `mail-daily-aggregator` reads each `emails/<pipeline_id>/summary.json`, groups
 related activity times, deadlines, and actions into one real-world event, and
@@ -106,7 +106,7 @@ or convert fields.
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
-python3 -m py_compile daily-mail-pipeline.py index-mail.py summarize-mail-agentic.py src/email_pipeline/*.py
+python3 -m py_compile daily-mail-pipeline.py scan_mails.py summarize-mail-agentic.py src/email_pipeline/*.py
 ```
 
 The test suite never connects to a mailbox or model API.

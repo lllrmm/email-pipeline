@@ -13,13 +13,15 @@ opencode_email_config_dir="$hermes_home/opencode-email-runtime/config/opencode"
 install -d -m 700 "$script_dir"
 
 install -m 700 "$repo_dir/daily-mail-pipeline.py" "$target"
-install -m 700 "$repo_dir/index-mail.py" "$script_dir/index-mail.py"
+install -m 700 "$repo_dir/scan_mails.py" "$script_dir/scan_mails.py"
+rm -f "$script_dir/index-mail.py"
 install -m 700 "$repo_dir/mail-index.py" "$script_dir/mail-index.py"
 rm -f "$script_dir/unpack-mail.py"
 rm -f "$script_dir/summarize-mail.py"
 install -m 700 "$repo_dir/summarize-mail-agentic.py" "$script_dir/summarize-mail-agentic.py"
 rm -f "$script_dir/opencode-mail.py"
-install -m 700 "$repo_dir/mails-aggregate-agentic.py" "$script_dir/mails-aggregate-agentic.py"
+install -m 700 "$repo_dir/aggregate-mails-agentic.py" "$script_dir/aggregate-mails-agentic.py"
+rm -f "$script_dir/mails-aggregate-agentic.py"
 rm -f "$script_dir/opencode-daily-summary.py"
 install -d -m 700 "$package_dir"
 install -m 600 "$repo_dir/src/email_pipeline/__init__.py" "$package_dir/__init__.py"
@@ -50,10 +52,10 @@ install -m 600 "$repo_dir/src/email_pipeline/agent_tools.py" "$package_dir/agent
 
 python3 -m py_compile \
   "$target" \
-  "$script_dir/index-mail.py" \
+  "$script_dir/scan_mails.py" \
   "$script_dir/mail-index.py" \
   "$script_dir/summarize-mail-agentic.py" \
-  "$script_dir/mails-aggregate-agentic.py" \
+  "$script_dir/aggregate-mails-agentic.py" \
   "$script_dir/mail-agent-tools.py" \
   "$package_dir/__init__.py" \
   "$package_dir/mime_extract.py" \

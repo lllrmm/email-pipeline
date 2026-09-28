@@ -22,7 +22,7 @@ def load_script(name: str, path: Path):
 
 class StageBoundaryTests(unittest.TestCase):
     def test_unpack_stage_has_no_model_dependency(self) -> None:
-        source = (ROOT / "index-mail.py").read_text(encoding="utf-8")
+        source = (ROOT / "scan_mails.py").read_text(encoding="utf-8")
         self.assertNotIn("import requests", source)
         self.assertNotIn("DEEPSEEK_API_KEY", source)
         self.assertNotIn("call_model(", source)
@@ -60,13 +60,13 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertFalse((ROOT / "summarize-mail.py").exists())
 
     def test_aggregation_does_not_materialize_pipeline_id_list(self) -> None:
-        source = (ROOT / "mails-aggregate-agentic.py").read_text(encoding="utf-8")
+        source = (ROOT / "aggregate-mails-agentic.py").read_text(encoding="utf-8")
 
         self.assertNotIn('workdir / "pipeline-id-list.json"', source)
         self.assertIn("INPUT_PIPELINE_IDS_JSON", source)
 
     def test_aggregation_outputs_are_timestamped_in_aggregation_directory(self) -> None:
-        aggregator = (ROOT / "mails-aggregate-agentic.py").read_text(encoding="utf-8")
+        aggregator = (ROOT / "aggregate-mails-agentic.py").read_text(encoding="utf-8")
         orchestrator = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
 
         self.assertIn('parser.add_argument("--output-dir"', aggregator)
@@ -76,7 +76,7 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('day_dir / "aggregation"', orchestrator)
 
     def test_scan_log_replaces_mail_index_and_bundle_artifacts(self) -> None:
-        indexer = (ROOT / "index-mail.py").read_text(encoding="utf-8")
+        indexer = (ROOT / "scan_mails.py").read_text(encoding="utf-8")
         orchestrator_source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
 
         self.assertIn('artifact_type": "mail_scan_log"', indexer)

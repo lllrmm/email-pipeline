@@ -106,7 +106,7 @@ def run_agentic_summaries(scan_log_path: Path, config_path: Path) -> tuple[Path,
     aggregation_dir = day_dir / "aggregation"
     result = run_stage([
         sys.executable,
-        str(SCRIPT_DIR / "mails-aggregate-agentic.py"),
+        str(SCRIPT_DIR / "aggregate-mails-agentic.py"),
         "--pipeline-id-list", *pipeline_ids,
         "--agent-workdir", str(day_dir),
         "--output-dir", str(aggregation_dir),
@@ -145,7 +145,7 @@ def main() -> int:
 
     index_command = [
         sys.executable,
-        str(SCRIPT_DIR / "index-mail.py"),
+        str(SCRIPT_DIR / "scan_mails.py"),
         "--config", str(args.config.expanduser()),
         "--output-root", str(args.output_root.expanduser()),
         "--limit-per-mailbox", str(args.limit_per_mailbox),

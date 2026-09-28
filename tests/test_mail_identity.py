@@ -9,7 +9,7 @@ from pathlib import Path
 from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("index_mail", ROOT / "index-mail.py")
+SPEC = importlib.util.spec_from_file_location("scan_mails", ROOT / "scan_mails.py")
 assert SPEC and SPEC.loader
 INDEX_MAIL = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(INDEX_MAIL)
