@@ -137,7 +137,7 @@ class MailIdentityIndex:
         account: str,
         folder: str,
         himalaya_id: str,
-        observed_date: str,
+        observed_date: str | None,
         sent_at: str | None = None,
         subject: str | None = None,
         sender: str | None = None,

@@ -35,15 +35,14 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('"--output"', source)
         self.assertIn('get("concurrency") or 8', source)
 
-    def test_incremental_skip_logic_belongs_to_scanner(self) -> None:
+    def test_scanner_is_transport_only_and_incremental_logic_belongs_to_orchestrator(self) -> None:
         scanner = (ROOT / "scan_mails.py").read_text(encoding="utf-8")
         orchestrator = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
         indexer = (ROOT / "index_mail.py").read_text(encoding="utf-8")
         summarizer = (ROOT / "summarize-mail-agentic.py").read_text(encoding="utf-8")
 
-        self.assertIn("classify_summary_state", scanner)
-        self.assertIn('identity.get("summarized") is not True', scanner)
-        self.assertNotIn('identity.get("summarized")', orchestrator)
+        self.assertNotIn('identity.get("summarized")', scanner)
+        self.assertIn('identity.get("summarized")', orchestrator)
         self.assertNotIn('identity.get("summarized")', indexer)
         self.assertNotIn('identity.get("summarized")', summarizer)
 
@@ -52,16 +51,12 @@ class StageBoundaryTests(unittest.TestCase):
         scanner = (ROOT / "scan_mails.py").read_text(encoding="utf-8")
 
         self.assertIn('parser.add_argument("--rfc-message-id"', indexer)
-        self.assertIn('parser.add_argument("--database"', indexer)
-        self.assertIn('parser.add_argument("--salt-path"', indexer)
-        self.assertNotIn('parser.add_argument("--folder"', indexer)
+        self.assertIn('parser.add_argument("--folder"', indexer)
+        self.assertIn('parser.add_argument("--himalaya-id"', indexer)
         self.assertNotIn('parser.add_argument("--envelope-json"', indexer)
-        self.assertNotIn("record_location", indexer)
+        self.assertIn("record_location", indexer)
         self.assertNotIn("record_workspace", indexer)
         self.assertNotIn("update_metadata", indexer)
-        self.assertIn("register_rfc_message_id", scanner)
-        self.assertIn("record_location", scanner)
-        self.assertIn("record_workspace", scanner)
 
     def test_agentic_output_path_is_caller_selected_inside_workspace(self) -> None:
         source = (ROOT / "summarize-mail-agentic.py").read_text(encoding="utf-8")
@@ -72,7 +67,7 @@ class StageBoundaryTests(unittest.TestCase):
     def test_orchestrator_has_no_provider_or_parser_dependency(self) -> None:
         source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
         self.assertNotIn("import requests", source)
-        self.assertNotIn("himalaya", source.lower())
+        self.assertNotIn("himalaya envelope", source.lower())
         self.assertNotIn("extract_message", source)
 
     def test_removed_intermediate_summary_script_stays_removed(self) -> None:
@@ -134,79 +129,6 @@ class StageBoundaryTests(unittest.TestCase):
 
             self.assertEqual(daily_summary["overview"], "Test summary")
 
-    def test_scanner_reuses_database_summarized_messages(self) -> None:
-        scanner = load_script("scan_mails_incremental", ROOT / "scan_mails.py")
-        with tempfile.TemporaryDirectory() as temp_dir:
-            day_dir = Path(temp_dir) / "2026-09-28"
-            pipeline_id = "a" * 64
-            mail_dir = day_dir / "emails" / pipeline_id
-            mail_dir.mkdir(parents=True)
-            database = Path(temp_dir) / "mail-index.sqlite3"
-            index = MailIdentityIndex(database)
-            index.record(
-                pipeline_id=pipeline_id,
-                rfc_message_id="<incremental@example.com>",
-                identity_source="rfc_message_id",
-                account="outlook",
-                folder="Inbox",
-                himalaya_id="42",
-                observed_date="2026-09-28",
-            )
-            (mail_dir / "request.json").write_text(json.dumps({
-                "pipeline_id": pipeline_id,
-                "index_database": str(database),
-            }), encoding="utf-8")
-            (mail_dir / "summary.json").write_text(json.dumps({
-                "pipeline_id": pipeline_id,
-                "analysis": {"summary": "done"},
-            }), encoding="utf-8")
-            index.set_summarized(pipeline_id)
-
-            state = scanner.classify_summary_state(database, day_dir, pipeline_id)
-
-            self.assertEqual(state, "reused")
-
-    def test_summarized_database_state_requires_summary_artifact(self) -> None:
-        scanner = load_script("scan_mails_consistency", ROOT / "scan_mails.py")
-        with tempfile.TemporaryDirectory() as temp_dir:
-            day_dir = Path(temp_dir) / "2026-09-28"
-            pipeline_id = "b" * 64
-            mail_dir = day_dir / "emails" / pipeline_id
-            mail_dir.mkdir(parents=True)
-            database = Path(temp_dir) / "mail-index.sqlite3"
-            index = MailIdentityIndex(database)
-            index.record(
-                pipeline_id=pipeline_id,
-                rfc_message_id="<missing@example.com>",
-                identity_source="rfc_message_id",
-                account="outlook",
-                folder="Inbox",
-                himalaya_id="43",
-                observed_date="2026-09-28",
-            )
-            (mail_dir / "request.json").write_text(json.dumps({
-                "pipeline_id": pipeline_id,
-                "index_database": str(database),
-            }), encoding="utf-8")
-            index.set_summarized(pipeline_id)
-
-            with self.assertRaisesRegex(RuntimeError, "summary.json is missing"):
-                scanner.classify_summary_state(database, day_dir, pipeline_id)
-
-    def test_orchestrator_consumes_scan_log_summary_partition(self) -> None:
-        orchestrator = load_script("daily_orchestrator_partition", ROOT / "daily-mail-pipeline.py")
-        included = ["a" * 64, "b" * 64]
-        scan_log = {
-            "included_pipeline_ids": included,
-            "pending_summary_pipeline_ids": [included[1]],
-            "reused_summary_pipeline_ids": [included[0]],
-        }
-
-        actual_included, pending, reused = orchestrator.summary_partition_from_scan_log(scan_log)
-
-        self.assertEqual(actual_included, included)
-        self.assertEqual(pending, [included[1]])
-        self.assertEqual(reused, [included[0]])
 
 
 if __name__ == "__main__":

@@ -74,8 +74,10 @@ class MailIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             with self.assertRaisesRegex(RuntimeError, "RFC Message-ID is required"):
-                INDEX_MAIL.register_rfc_message_id(
+                INDEX_MAIL.register_mail(
                     "",
+                    "Inbox",
+                    "42",
                     salt=b"x" * 32,
                     database_path=root / "index.sqlite3",
                 )
@@ -84,13 +86,17 @@ class MailIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             database = root / "index.sqlite3"
-            first = INDEX_MAIL.register_rfc_message_id(
+            first = INDEX_MAIL.register_mail(
                 "<registered@example.com>",
+                "Inbox",
+                "42",
                 salt=b"x" * 32,
                 database_path=database,
             )
-            second = INDEX_MAIL.register_rfc_message_id(
+            second = INDEX_MAIL.register_mail(
                 "<registered@example.com>",
+                "Inbox",
+                "42",
                 salt=b"x" * 32,
                 database_path=database,
             )
@@ -101,38 +107,9 @@ class MailIdentityTests(unittest.TestCase):
             self.assertEqual(second["status"], "already_registered")
             self.assertEqual(first["pipeline_id"], second["pipeline_id"])
             self.assertEqual(identity["rfc_message_id"], "<registered@example.com>")
-            self.assertEqual(identity["locations"], [])
+            self.assertEqual(identity["locations"][0]["folder"], "Inbox")
             self.assertEqual(identity["workspaces"], [])
             self.assertIsNone(identity["metadata"])
-
-    def test_scanner_records_envelope_context_after_identity_registration(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            database = root / "index.sqlite3"
-            result = SCAN_MAILS.register_scanned_envelope(
-                "Inbox",
-                {
-                    "id": "42",
-                    "message-id": "<scanned@example.com>",
-                    "subject": "Scanned",
-                    "date": "2026-09-28T00:00:00Z",
-                    "from": {"name": "Sender", "addr": "sender@example.com"},
-                },
-                root / "2026-09-28",
-                account="outlook",
-                salt=b"x" * 32,
-                database_path=database,
-                observed_date="2026-09-28",
-            )
-
-            identity = MailIdentityIndex(database).lookup_pipeline_id(result["pipeline_id"])
-            request_path = Path(result["mail_dir"]) / "request.json"
-
-            self.assertEqual(result["status"], "registered")
-            self.assertEqual(identity["locations"][0]["folder"], "Inbox")
-            self.assertEqual(identity["metadata"]["subject"], "Scanned")
-            self.assertEqual(identity["workspaces"][0]["path"], result["mail_dir"])
-            self.assertTrue(request_path.is_file())
 
     def test_salted_id_is_stable_and_index_is_bidirectional(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

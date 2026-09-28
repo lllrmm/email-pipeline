@@ -37,21 +37,19 @@ Outlook envelope metadata
     -> aggregation/aggregation-<generated UTC time>.json
 ```
 
-`scan_mails.py` owns mailbox scanning, envelope location/metadata persistence,
-workspace creation, and incremental summary classification. `index_mail.py`
-accepts only an RFC Message-ID plus database/salt configuration and returns the
-stable `pipeline_id` with status `registered` or `already_registered`; it does
-not receive folder, Himalaya ID, dates, or workspace data. Neither script reads
-message bodies or unpacks MIME. The single-email
+`scan_mails.py` accepts a date or date range and outputs the discovered
+`rfc_message_id`, folder, and folder-scoped Himalaya ID triples. `index_mail.py`
+accepts one such triple, registers the stable identity and transport location,
+and returns the `pipeline_id` with status `registered` or
+`already_registered`. Neither script reads message bodies or unpacks MIME. The single-email
 OpenCode agent owns `mail_fetch`, `mail_unpack`, attachment extraction, and
 link inspection inside `emails/<pipeline_id>/`.
 
-Incremental classification is owned by `scan_mails.py`. It records
-`pending_summary_pipeline_ids` and `reused_summary_pipeline_ids` in the scan
-log. `daily-mail-pipeline.py` consumes those lists without querying SQLite;
-only pending IDs invoke `summarize-mail-agentic.py`. Daily aggregation still
-includes every pipeline ID from the current scan, so later runs produce
-complete snapshots.
+`daily-mail-pipeline.py` calls `index_mail.py` for every scanned triple, creates
+the fixed workspace request, and then performs incremental summary planning
+using the returned pipeline IDs. Only unsummarized IDs invoke
+`summarize-mail-agentic.py`; aggregation still includes every unique pipeline
+ID from the current scan.
 
 ## OpenCode single-email agent chain
 

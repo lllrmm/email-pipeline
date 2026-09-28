@@ -15,6 +15,12 @@ from typing import Any
 import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
+from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 
 DEFAULT_CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes" / "email" / "daily"
@@ -37,24 +43,68 @@ def run_stage(command: list[str]) -> dict[str, Any]:
     return result
 
 
-def summary_partition_from_scan_log(scan_log: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
-    included = list(scan_log.get("included_pipeline_ids") or [])
-    pending = list(scan_log.get("pending_summary_pipeline_ids") or [])
-    reused = list(scan_log.get("reused_summary_pipeline_ids") or [])
-    if len(included) != len(set(included)):
-        raise RuntimeError("scan log contains duplicate included pipeline IDs")
-    if set(pending) & set(reused):
-        raise RuntimeError("scan log marks a pipeline ID as both pending and reused")
-    if set(pending) | set(reused) != set(included):
-        raise RuntimeError("scan log summary partition does not match included pipeline IDs")
-    return included, pending, reused
-
-
-def run_agentic_summaries(scan_log_path: Path, config_path: Path) -> tuple[Path, int, int]:
+def prepare_scanned_mails(scan_log_path: Path, config_path: Path) -> tuple[list[str], list[str], list[str]]:
     scan_log = json.loads(scan_log_path.read_text(encoding="utf-8"))
+    mails = list(scan_log.get("mails") or [])
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    identity_config = config.get("identity") or {}
+    database_path = Path(identity_config.get("database_path") or (Path.home() / ".hermes" / "email" / "mail-index.sqlite3")).expanduser().resolve()
+    index = MailIdentityIndex(database_path)
+    day_dir = scan_log_path.parent.parent
+    pipeline_ids: list[str] = []
+    rfc_by_pipeline: dict[str, str] = {}
+    for mail in mails:
+        rfc_message_id = str(mail.get("rfc_message_id") or "").strip()
+        folder = str(mail.get("folder") or "").strip()
+        himalaya_id = str(mail.get("himalaya_id") or "").strip()
+        result = run_stage([
+            sys.executable,
+            str(SCRIPT_DIR / "index_mail.py"),
+            "--rfc-message-id", rfc_message_id,
+            "--folder", folder,
+            "--himalaya-id", himalaya_id,
+            "--config", str(config_path),
+        ])
+        pipeline_id = str(result["pipeline_id"])
+        if pipeline_id not in rfc_by_pipeline:
+            pipeline_ids.append(pipeline_id)
+            rfc_by_pipeline[pipeline_id] = rfc_message_id
+
+    pending: list[str] = []
+    reused: list[str] = []
+    for pipeline_id in pipeline_ids:
+        mail_dir = day_dir / "emails" / pipeline_id
+        mail_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        index.record_workspace(pipeline_id, str(scan_log.get("date") or day_dir.name), mail_dir)
+        secure_write_text(mail_dir / "request.json", json.dumps({
+            "pipeline_id": pipeline_id,
+            "rfc_message_id": rfc_by_pipeline[pipeline_id],
+            "identity_source": "rfc_message_id",
+            "index_database": str(database_path),
+        }, ensure_ascii=False, indent=2))
+        identity = index.lookup_pipeline_id(pipeline_id)
+        if identity is None or identity.get("summarized") is not True:
+            pending.append(pipeline_id)
+            continue
+        summary_path = mail_dir / "summary.json"
+        if not summary_path.is_file():
+            raise RuntimeError(f"database says summarized but summary.json is missing: {pipeline_id}")
+        artifact = json.loads(summary_path.read_text(encoding="utf-8"))
+        if artifact.get("pipeline_id") != pipeline_id or not isinstance(artifact.get("analysis"), dict):
+            raise RuntimeError(f"database says summarized but summary.json is invalid: {pipeline_id}")
+        reused.append(pipeline_id)
+    return pipeline_ids, pending, reused
+
+
+def run_agentic_summaries(
+    scan_log_path: Path,
+    config_path: Path,
+    pipeline_ids: list[str],
+    pending_ids: list[str],
+    reused_ids: list[str],
+) -> tuple[Path, int, int]:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     workers = max(1, int((config.get("opencode") or {}).get("concurrency") or 8))
-    pipeline_ids, pending_ids, reused_ids = summary_partition_from_scan_log(scan_log)
     day_dir = scan_log_path.parent.parent
     completed_ids: list[str | None] = [None] * len(pending_ids)
 
@@ -145,13 +195,20 @@ def main() -> int:
         total_messages = 0
         for scan_log_path in scan_log_paths:
             scan_log = json.loads(scan_log_path.read_text(encoding="utf-8"))
+            pipeline_ids, pending_ids, reused_ids = prepare_scanned_mails(
+                scan_log_path,
+                args.config.expanduser().resolve(),
+            )
             aggregation_path: Path | None = None
-            summaries_reused = 0
+            summaries_reused = len(reused_ids)
             summaries_created = 0
             if not args.no_summary:
                 aggregation_path, summaries_reused, summaries_created = run_agentic_summaries(
                     scan_log_path,
                     args.config.expanduser().resolve(),
+                    pipeline_ids,
+                    pending_ids,
+                    reused_ids,
                 )
             daily_summary = load_daily_summary(scan_log, aggregation_path)
             messages_total = int(scan_log.get("messages_total") or 0)
