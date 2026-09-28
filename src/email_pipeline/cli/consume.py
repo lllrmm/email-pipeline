@@ -14,20 +14,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
-    if str(candidate) not in sys.path:
-        sys.path.insert(0, str(candidate))
-
 from email_pipeline.config import load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.mail_identity import get_or_create_salt  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
-from index_mail import register_mail  # noqa: E402
+from email_pipeline.services.registry import register_mail  # noqa: E402
+from email_pipeline.config import default_config_path  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
 
 STOP = False
-CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.toml"
+CONFIG_PATH = default_config_path()
 
 
 def stop(*_args) -> None:
@@ -58,7 +54,7 @@ def process_event(event: dict, config: dict, config_path: Path, index: MailIdent
     identity = index.lookup_pipeline_id(pipeline_id)
     if identity and identity.get("summarized") is True and (mail_dir / "summary.json").is_file():
         return pipeline_id
-    completed = subprocess.run([sys.executable, str(SCRIPT_DIR / "summarize-mail-agentic.py"), "--pipeline-id", pipeline_id, "--mail-dir", str(mail_dir), "--output", str(mail_dir / "summary.json"), "--config", str(config_path)], text=True, capture_output=True, check=False)
+    completed = subprocess.run([sys.executable, "-m", "email_pipeline", "summarize", "--pipeline-id", pipeline_id, "--mail-dir", str(mail_dir), "--output", str(mail_dir / "summary.json"), "--config", str(config_path)], text=True, capture_output=True, check=False)
     if completed.returncode != 0:
         raise RuntimeError((completed.stderr or completed.stdout)[-1000:])
     return pipeline_id

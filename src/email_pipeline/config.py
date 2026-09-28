@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import tomllib
+import os
 from pathlib import Path
 from typing import Any
 
 CONFIG_FILENAME = "daily-mail-pipeline.toml"
+
+
+def default_config_path() -> Path:
+    hermes_home = Path.home() / ".hermes"
+    return Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or hermes_home / "scripts" / "email-pipeline" / CONFIG_FILENAME)
 
 
 def load_config(path: Path) -> dict[str, Any]:

@@ -9,16 +9,8 @@ from pathlib import Path
 from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id
 from email_pipeline.program_time import configure_program_timezone
 
-ROOT = Path(__file__).resolve().parents[1]
-SCAN_SPEC = importlib.util.spec_from_file_location("scan_mails", ROOT / "scan_mails.py")
-assert SCAN_SPEC and SCAN_SPEC.loader
-SCAN_MAILS = importlib.util.module_from_spec(SCAN_SPEC)
-SCAN_SPEC.loader.exec_module(SCAN_MAILS)
-INDEX_SPEC = importlib.util.spec_from_file_location("index_mail", ROOT / "index_mail.py")
-assert INDEX_SPEC and INDEX_SPEC.loader
-INDEX_MAIL = importlib.util.module_from_spec(INDEX_SPEC)
-INDEX_SPEC.loader.exec_module(INDEX_MAIL)
-
+from email_pipeline.cli import scan as SCAN_MAILS
+from email_pipeline.services import registry as INDEX_MAIL
 
 class MailIdentityTests(unittest.TestCase):
     def test_fresh_database_has_four_business_tables(self) -> None:

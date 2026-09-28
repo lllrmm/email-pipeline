@@ -13,18 +13,13 @@ from pathlib import Path
 from email import policy
 from email.parser import BytesParser
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
-    if str(candidate) not in sys.path:
-        sys.path.insert(0, str(candidate))
-
-from email_pipeline.config import load_config  # noqa: E402
+from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
 from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, normalize_rfc_message_id  # noqa: E402
 
-CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.toml"
+CONFIG_PATH = default_config_path()
 STATE_PATH = Path.home() / ".hermes" / "email" / "watch-state.json"
 STOP = False
 LOGGER = __import__("logging").getLogger("email_pipeline.watcher")

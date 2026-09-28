@@ -5,6 +5,9 @@ description = "Read-only MIME and attachment extraction for Hermes Agent"
 requires-python = ">=3.11"
 dependencies = ["requests>=2.31"]
 
+[project.scripts]
+email-pipeline = "email_pipeline.__main__:main"
+
 [tool.ruff]
 line-length = 120
 

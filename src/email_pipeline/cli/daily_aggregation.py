@@ -14,16 +14,11 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
-    if str(candidate) not in sys.path:
-        sys.path.insert(0, str(candidate))
-
-from email_pipeline.config import load_config  # noqa: E402
+from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
 
-DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.toml"
+DEFAULT_CONFIG = default_config_path()
 DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes/email/daily"
 
 
@@ -95,7 +90,7 @@ def run_aggregation(config_path: Path, output_root: Path, target_date: str, pipe
     day_dir = output_root / target_date
     command = [
         sys.executable,
-        str(SCRIPT_DIR / "aggregate-mails-agentic.py"),
+        "-m", "email_pipeline", "aggregate",
         "--pipeline-id-list",
         *pipeline_ids,
         "--agent-workdir",

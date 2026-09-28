@@ -9,16 +9,11 @@ import os
 import sys
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
-    if str(candidate) not in sys.path:
-        sys.path.insert(0, str(candidate))
-
-from email_pipeline.config import load_config  # noqa: E402
+from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id, normalize_rfc_message_id  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
 
-DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.toml"
+DEFAULT_CONFIG = default_config_path()
 
 
 def register_mail(

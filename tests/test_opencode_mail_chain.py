@@ -13,12 +13,7 @@ from email_pipeline.mail_identity import MailIdentityIndex
 from email_pipeline.program_time import configure_program_timezone
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("opencode_mail", ROOT / "summarize-mail-agentic.py")
-assert SPEC and SPEC.loader
-OPENCODE_MAIL = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(OPENCODE_MAIL)
-
+from email_pipeline.cli import summarize as OPENCODE_MAIL
 
 class OpenCodeMailChainTests(unittest.TestCase):
     def test_cached_fetch_persists_complete_message_headers(self) -> None:
