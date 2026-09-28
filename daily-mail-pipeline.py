@@ -81,16 +81,16 @@ def run_agentic_summaries(index_path: Path, config_path: Path) -> Path:
             completed_ids[position] = pipeline_id
 
     pipeline_ids = [pipeline_id for pipeline_id in completed_ids if pipeline_id]
-    summary_path = index_path.with_name("aggregation.json")
-    run_stage([
+    aggregation_dir = index_path.parent / "aggregation"
+    result = run_stage([
         sys.executable,
         str(SCRIPT_DIR / "mails-aggregate-agentic.py"),
         "--pipeline-id-list", *pipeline_ids,
         "--agent-workdir", str(index_path.parent),
-        "--output", str(summary_path),
+        "--output-dir", str(aggregation_dir),
         "--config", str(config_path),
     ])
-    return summary_path
+    return Path(result["summary_path"])
 
 
 def materialize_bundle(

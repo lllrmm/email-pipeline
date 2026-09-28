@@ -62,6 +62,11 @@ class DailyAggregationTests(unittest.TestCase):
         parsed = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
         self.assertEqual(parsed.utcoffset(), dt.timedelta(0))
 
+    def test_aggregation_filename_uses_generated_utc_time(self) -> None:
+        filename = MODULE.aggregation_filename("2026-09-28T10:04:35.098404Z")
+
+        self.assertEqual(filename, "aggregation-20260928T100435.098404Z.json")
+
     def test_parser_extracts_json_from_surrounding_text(self) -> None:
         value = MODULE.parse_json_object('Result follows:\n```json\n{"overview":"ok"}\n```')
         self.assertEqual(value, {"overview": "ok"})

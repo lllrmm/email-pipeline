@@ -32,7 +32,7 @@ Outlook envelope metadata
     -> index-mail.py
     -> mail-index.json + emails/<pipeline_id>/request.json
     -> daily-mail-pipeline.py calls summarize-mail-agentic.py per pipeline_id
-    -> aggregation.json
+    -> aggregation/aggregation-<generated UTC time>.json
     -> daily-mail-pipeline.py compatibility merge
     -> bundle.json
 ```
@@ -78,14 +78,14 @@ After all per-email sessions finish, `mails-aggregate-agentic.py` receives the
 pipeline ID list, date work directory, and output path. The
 `mail-daily-aggregator` reads each `emails/<pipeline_id>/summary.json`, groups
 related activity times, deadlines, and actions into one real-world event, and
-writes the public `aggregation.json`. The public
+writes a timestamped public JSON under `aggregation/`. The public
 summary, compatibility bundle, and Cron stdout intentionally exclude raw mail
 paths, EML paths, attachment manifests/text paths, sizes, extraction counters,
 links, images, and attachment inventories.
 
-Every per-email `summary.json` and daily `aggregation.json` has a top-level
+Every per-email `summary.json` and daily aggregation JSON has a top-level
 `generated_at` timestamp in UTC ISO 8601 format.
-The `aggregation.json` artifact also has a top-level `included_pipeline_ids`
+Each aggregation artifact also has a top-level `included_pipeline_ids`
 array containing the complete validated, de-duplicated input list in order.
 Python derives top-level `earliest_email_at` and `latest_email_at` UTC timestamps
 from those included messages; the aggregation agent does not generate them.
@@ -137,7 +137,11 @@ Himalaya IDs are not part of this interface.
 │       └── opencode-run/
 │           ├── events.jsonl
 │           └── metadata.json
-├── aggregation.json
+├── aggregation/
+│   ├── aggregation-20260928T100435.098404Z.json
+│   └── _run/
+│       ├── events.jsonl
+│       └── stderr.txt
 ├── bundle.json
 ```
 

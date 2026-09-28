@@ -55,6 +55,16 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertNotIn('workdir / "pipeline-id-list.json"', source)
         self.assertIn("INPUT_PIPELINE_IDS_JSON", source)
 
+    def test_aggregation_outputs_are_timestamped_in_aggregation_directory(self) -> None:
+        aggregator = (ROOT / "mails-aggregate-agentic.py").read_text(encoding="utf-8")
+        orchestrator = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
+
+        self.assertIn('parser.add_argument("--output-dir"', aggregator)
+        self.assertNotIn('parser.add_argument("--output"', aggregator)
+        self.assertIn('workdir / "aggregation"', aggregator)
+        self.assertIn('return f"aggregation-', aggregator)
+        self.assertIn('index_path.parent / "aggregation"', orchestrator)
+
     def test_compatibility_bundle_joins_matching_artifacts(self) -> None:
         orchestrator = load_script("daily_orchestrator", ROOT / "daily-mail-pipeline.py")
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -31,6 +31,12 @@ def generated_at_utc() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def aggregation_filename(generated_at: str) -> str:
+    timestamp = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    timestamp = timestamp.astimezone(dt.timezone.utc)
+    return f"aggregation-{timestamp.strftime('%Y%m%dT%H%M%S.%fZ')}.json"
+
+
 def email_time_bounds(values: list[str]) -> tuple[str | None, str | None]:
     parsed: list[dt.datetime] = []
     for value in values:
@@ -208,19 +214,19 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pipeline-id-list", required=True, nargs="*")
     parser.add_argument("--agent-workdir", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args()
 
     workdir = args.agent_workdir.expanduser().resolve()
-    output_path = args.output.expanduser().resolve()
+    output_dir = args.output_dir.expanduser().resolve()
     config_path = args.config.expanduser().resolve()
     if not workdir.is_dir():
         raise RuntimeError(f"agent work directory does not exist: {workdir}")
-    if output_path != workdir and workdir not in output_path.parents:
-        raise RuntimeError("output path must stay inside the agent work directory")
-    if output_path.name != "aggregation.json" or output_path.parent != workdir:
-        raise RuntimeError("aggregate output must be <agent-workdir>/aggregation.json")
+    expected_output_dir = (workdir / "aggregation").resolve()
+    if output_dir != expected_output_dir:
+        raise RuntimeError("aggregate output directory must be <agent-workdir>/aggregation")
+    output_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     pipeline_ids = list(dict.fromkeys(args.pipeline_id_list))
     sent_times = validate_pipeline_inputs(workdir, pipeline_ids)
     earliest_email_at, latest_email_at = email_time_bounds(sent_times)
@@ -249,9 +255,9 @@ def main() -> int:
     env["XDG_STATE_HOME"] = str(runtime_state)
     env["OPENCODE_CONFIG_DIR"] = str(runtime_config / "opencode")
 
-    run_dir = workdir / "aggregation-run"
+    run_dir = output_dir / "_run"
     run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    for name in ("events.jsonl", "stderr.txt", "metadata.json"):
+    for name in ("events.jsonl", "stderr.txt"):
         (run_dir / name).unlink(missing_ok=True)
 
     input_ids_json = json.dumps(pipeline_ids, ensure_ascii=False, separators=(",", ":"))
@@ -285,13 +291,9 @@ def main() -> int:
         model=model,
         tools_used=tools_used,
     )
-    secure_write(run_dir / "metadata.json", json.dumps({
-        "session_id": session_id,
-        "model": model,
-        "tools_used": tools_used,
-        "returncode": completed.returncode,
-        "pipeline_ids": pipeline_ids,
-    }, ensure_ascii=False, indent=2))
+    output_path = output_dir / aggregation_filename(output["generated_at"])
+    if output_path.exists():
+        raise RuntimeError(f"aggregation output already exists: {output_path}")
     secure_write(output_path, json.dumps(output, ensure_ascii=False, indent=2))
     print(json.dumps({"ok": True, "summary_path": str(output_path), "session_id": session_id}, ensure_ascii=False))
     return 0
