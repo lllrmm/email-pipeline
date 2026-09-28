@@ -145,6 +145,15 @@ class MailIdentityIndex:
                 );
                 CREATE INDEX IF NOT EXISTS idx_email_event_queue_status
                     ON email_event_queue(status, queue_id);
+                CREATE TABLE IF NOT EXISTS email_watch_folder_state (
+                    account TEXT NOT NULL,
+                    folder TEXT NOT NULL,
+                    uidvalidity INTEGER NOT NULL,
+                    uidnext INTEGER NOT NULL,
+                    messages INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(account, folder)
+                );
                 """
             )
             columns = {
@@ -472,6 +481,44 @@ class MailIdentityIndex:
                 "SELECT * FROM email_event_queue ORDER BY queue_id"
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def load_watch_snapshot(self, account: str) -> dict[str, dict[str, int]]:
+        with closing(self.connect()) as connection:
+            rows = connection.execute(
+                "SELECT folder, uidvalidity, uidnext, messages FROM email_watch_folder_state WHERE account=?",
+                (account,),
+            ).fetchall()
+        return {
+            str(row["folder"]): {
+                "uidvalidity": int(row["uidvalidity"]),
+                "uidnext": int(row["uidnext"]),
+                "messages": int(row["messages"]),
+            }
+            for row in rows
+        }
+
+    def replace_watch_snapshot(self, account: str, snapshot: dict[str, dict[str, int]]) -> None:
+        updated_at = now_rfc3339()
+        with closing(self.connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM email_watch_folder_state WHERE account=?", (account,))
+            connection.executemany(
+                """INSERT INTO email_watch_folder_state
+                (account, folder, uidvalidity, uidnext, messages, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        account,
+                        folder,
+                        int(values["uidvalidity"]),
+                        int(values["uidnext"]),
+                        int(values.get("messages", 0)),
+                        updated_at,
+                    )
+                    for folder, values in snapshot.items()
+                ],
+            )
+            connection.commit()
 
     def lookup_pipeline_id(self, pipeline_id: str) -> dict[str, Any] | None:
         return self._lookup("pipeline_id", pipeline_id)

@@ -190,6 +190,23 @@ class MailIdentityTests(unittest.TestCase):
             self.assertTrue(stored["claimed_at"].endswith("+08:00"))
             self.assertNotIn(".", stored["claimed_at"])
 
+    def test_watch_snapshot_is_replaced_transactionally(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            index = MailIdentityIndex(Path(temp_dir) / "index.sqlite3")
+            index.replace_watch_snapshot("outlook", {
+                "Inbox": {"uidvalidity": 1, "uidnext": 10, "messages": 9},
+                "Canvas": {"uidvalidity": 2, "uidnext": 20, "messages": 18},
+            })
+            self.assertEqual(index.load_watch_snapshot("outlook")["Inbox"]["uidnext"], 10)
+
+            index.replace_watch_snapshot("outlook", {
+                "Inbox": {"uidvalidity": 1, "uidnext": 11, "messages": 10},
+            })
+            snapshot = index.load_watch_snapshot("outlook")
+            self.assertEqual(snapshot, {
+                "Inbox": {"uidvalidity": 1, "uidnext": 11, "messages": 10},
+            })
+
 
 if __name__ == "__main__":
     unittest.main()

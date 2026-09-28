@@ -23,7 +23,6 @@ from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E4
 from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, normalize_rfc_message_id  # noqa: E402
-from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 
 CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.toml"
 STATE_PATH = Path.home() / ".hermes" / "email" / "watch-state.json"
@@ -92,7 +91,12 @@ def main() -> int:
     account = str(identity.get("account") or "outlook")
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
     index = MailIdentityIndex(database)
-    previous = json.loads(STATE_PATH.read_text(encoding="utf-8")) if STATE_PATH.is_file() else {}
+    previous = index.load_watch_snapshot(account)
+    if not previous and STATE_PATH.is_file():
+        previous = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+        index.replace_watch_snapshot(account, previous)
+        STATE_PATH.unlink()
+        LOGGER.info("migrated_json_watch_state folders=%d", len(previous))
     LOGGER.info("watcher_start mode=all_folder_uidnext_poll poll_seconds=%d debounce_seconds=%d", poll_seconds, debounce_seconds)
     while not STOP:
         try:
@@ -109,7 +113,7 @@ def main() -> int:
                     if mails:
                         LOGGER.info("enqueued detected=%d inserted=%d changed_folders=%s", len(mails), inserted, sorted(changes))
                 previous = current
-                secure_write_text(STATE_PATH, json.dumps(current, ensure_ascii=False, indent=2))
+                index.replace_watch_snapshot(account, current)
         except Exception as exc:
             LOGGER.exception("watch_error")
             time.sleep(15)
