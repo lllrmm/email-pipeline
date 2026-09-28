@@ -83,6 +83,9 @@ summary, compatibility bundle, and Cron stdout intentionally exclude raw mail
 paths, EML paths, attachment manifests/text paths, sizes, extraction counters,
 links, images, and attachment inventories.
 
+Every per-email `summary.json` and daily `aggregation.json` has a top-level
+`generated_at` timestamp in UTC ISO 8601 format.
+
 The public daily timeline uses one `events` array. Each event contains its own
 `scheduled`, `deadlines`, and `actions` arrays. Every nested item has a required
 non-empty `content` description, so an activity and its

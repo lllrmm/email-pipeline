@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import datetime as dt
 import json
 import tempfile
 import unittest
@@ -18,6 +19,13 @@ SPEC.loader.exec_module(OPENCODE_MAIL)
 
 
 class OpenCodeMailChainTests(unittest.TestCase):
+    def test_individual_summary_timestamp_is_utc_iso8601(self) -> None:
+        generated_at = OPENCODE_MAIL.generated_at_utc()
+
+        self.assertTrue(generated_at.endswith("Z"))
+        parsed = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        self.assertEqual(parsed.utcoffset(), dt.timedelta(0))
+
     def test_lossless_unpack_and_agent_requested_extraction(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)

@@ -27,6 +27,10 @@ from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
 
+def generated_at_utc() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def secure_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -249,6 +253,7 @@ def main() -> int:
     output = {
         "schema_version": 3,
         "artifact_type": "mail_individual_summary",
+        "generated_at": generated_at_utc(),
         "pipeline_id": pipeline_id,
         "processor": processor,
         "analysis": result,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import datetime as dt
 import json
 import tempfile
 import unittest
@@ -17,6 +18,13 @@ SPEC.loader.exec_module(MODULE)
 
 
 class DailyAggregationTests(unittest.TestCase):
+    def test_aggregation_timestamp_is_utc_iso8601(self) -> None:
+        generated_at = MODULE.generated_at_utc()
+
+        self.assertTrue(generated_at.endswith("Z"))
+        parsed = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        self.assertEqual(parsed.utcoffset(), dt.timedelta(0))
+
     def test_parser_extracts_json_from_surrounding_text(self) -> None:
         value = MODULE.parse_json_object('Result follows:\n```json\n{"overview":"ok"}\n```')
         self.assertEqual(value, {"overview": "ok"})

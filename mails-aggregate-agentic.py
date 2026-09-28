@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import os
@@ -24,6 +25,10 @@ from email_pipeline.daily_schema import validate_daily_summary  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
+
+
+def generated_at_utc() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def secure_write(path: Path, text: str) -> None:
@@ -223,6 +228,7 @@ def main() -> int:
     output = {
         "schema_version": 3,
         "artifact_type": "mail_daily_summary",
+        "generated_at": generated_at_utc(),
         "processor": {
             "processor": "opencode",
             "session_id": session_id,
