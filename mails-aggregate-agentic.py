@@ -43,7 +43,7 @@ def build_aggregation_artifact(
         "schema_version": 3,
         "artifact_type": "mail_daily_summary",
         "generated_at": generated_at_utc(),
-        "input_pipeline_ids": list(pipeline_ids),
+        "included_pipeline_ids": list(pipeline_ids),
         "processor": {
             "processor": "opencode",
             "session_id": session_id,

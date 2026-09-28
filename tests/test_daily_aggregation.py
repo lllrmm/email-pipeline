@@ -37,9 +37,9 @@ class DailyAggregationTests(unittest.TestCase):
             tools_used=["mail_validate_daily_summary"],
         )
 
-        self.assertEqual(artifact["input_pipeline_ids"], pipeline_ids)
+        self.assertEqual(artifact["included_pipeline_ids"], pipeline_ids)
         self.assertIs(artifact["daily_summary"], daily_summary)
-        self.assertNotIn("input_pipeline_ids", daily_summary)
+        self.assertNotIn("included_pipeline_ids", daily_summary)
 
     def test_aggregation_timestamp_is_utc_iso8601(self) -> None:
         generated_at = MODULE.generated_at_utc()
