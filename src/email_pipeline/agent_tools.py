@@ -15,6 +15,7 @@ import tempfile
 from email import policy
 from email.message import Message
 from email.parser import BytesParser
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,38 @@ def decode_part(part: Message) -> str:
         return payload.decode("utf-8", errors="replace")
 
 
+def header_text(message: Message, name: str) -> str:
+    return ", ".join(str(value) for value in message.get_all(name, [])).strip()
+
+
+def normalize_sent_at(value: str) -> str | None:
+    if not value:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        return value
+    return parsed.isoformat()
+
+
+def persist_message_metadata(index: MailIdentityIndex, pipeline_id: str, data: bytes) -> None:
+    message = BytesParser(policy=policy.default).parsebytes(data, headersonly=True)
+    date_header = header_text(message, "Date")
+    index.update_metadata(
+        pipeline_id,
+        sent_at=normalize_sent_at(date_header),
+        date_header=date_header or None,
+        subject=header_text(message, "Subject") or None,
+        sender=header_text(message, "From") or None,
+        recipients=header_text(message, "To") or None,
+        cc=header_text(message, "Cc") or None,
+        bcc=header_text(message, "Bcc") or None,
+        reply_to=header_text(message, "Reply-To") or None,
+        in_reply_to=header_text(message, "In-Reply-To") or None,
+        references_header=header_text(message, "References") or None,
+    )
+
+
 def command_fetch(workspace: Path) -> dict[str, Any]:
     request = load_json(workspace / "request.json")
     pipeline_id = str(request.get("pipeline_id") or "").strip()
@@ -72,14 +105,18 @@ def command_fetch(workspace: Path) -> dict[str, Any]:
     if not identity or not identity.get("locations"):
         raise RuntimeError(f"no IMAP location found for pipeline id: {pipeline_id}")
     eml_path = workspace / "message.eml"
+    index = MailIdentityIndex(Path(database))
     if eml_path.is_file():
         data = eml_path.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        index.set_eml_sha256(pipeline_id, digest)
+        persist_message_metadata(index, pipeline_id, data)
         return {
             "status": "cached",
             "pipeline_id": pipeline_id,
             "path": "message.eml",
             "size": len(data),
-            "sha256": hashlib.sha256(data).hexdigest(),
+            "sha256": digest,
         }
     last_error = ""
     for location in identity["locations"]:
@@ -93,7 +130,8 @@ def command_fetch(workspace: Path) -> dict[str, Any]:
             if completed.returncode == 0:
                 secure_write_bytes(eml_path, completed.stdout)
                 digest = hashlib.sha256(completed.stdout).hexdigest()
-                MailIdentityIndex(Path(database)).set_eml_sha256(pipeline_id, digest)
+                index.set_eml_sha256(pipeline_id, digest)
+                persist_message_metadata(index, pipeline_id, completed.stdout)
                 return {
                     "status": "fetched",
                     "pipeline_id": pipeline_id,

@@ -157,6 +157,23 @@ def safe_name(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("_")[:80] or "mailbox"
 
 
+def envelope_address_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, list):
+        rendered = [envelope_address_text(item) for item in value]
+        return ", ".join(item for item in rendered if item) or None
+    if isinstance(value, dict):
+        name = str(value.get("name") or "").strip()
+        address = str(value.get("addr") or value.get("address") or value.get("email") or "").strip()
+        if name and address:
+            return f"{name} <{address}>"
+        return address or name or None
+    return str(value).strip() or None
+
+
 def envelope_local_date(env: dict[str, Any], tz: ZoneInfo) -> str | None:
     raw = env.get("date")
     if not raw:
@@ -219,6 +236,9 @@ def process_message(
         folder=folder,
         himalaya_id=msg_id,
         observed_date=observed_date,
+        sent_at=str(env.get("date") or "").strip() or None,
+        subject=str(env.get("subject") or "").strip() or None,
+        sender=envelope_address_text(env.get("from")),
     )
 
     email_dir = day_dir / "emails" / pipeline_id

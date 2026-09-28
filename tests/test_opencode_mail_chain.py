@@ -9,6 +9,7 @@ from email.message import EmailMessage
 from pathlib import Path
 
 from email_pipeline import agent_tools
+from email_pipeline.mail_identity import MailIdentityIndex
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,47 @@ SPEC.loader.exec_module(OPENCODE_MAIL)
 
 
 class OpenCodeMailChainTests(unittest.TestCase):
+    def test_cached_fetch_persists_complete_message_headers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            pipeline_id = "a" * 64
+            database = workspace / "index.sqlite3"
+            index = MailIdentityIndex(database)
+            index.record(
+                pipeline_id=pipeline_id,
+                rfc_message_id="<headers@example.com>",
+                identity_source="rfc_message_id",
+                account="outlook",
+                folder="Inbox",
+                himalaya_id="42",
+                observed_date="2026-09-28",
+            )
+            (workspace / "request.json").write_text(json.dumps({
+                "pipeline_id": pipeline_id,
+                "index_database": str(database),
+            }), encoding="utf-8")
+            message = EmailMessage()
+            message["Message-ID"] = "<headers@example.com>"
+            message["Date"] = "Mon, 28 Sep 2026 12:34:56 +0800"
+            message["Subject"] = "Metadata subject"
+            message["From"] = "Sender <sender@example.com>"
+            message["To"] = "One <one@example.com>, Two <two@example.com>"
+            message["Cc"] = "Copy <copy@example.com>"
+            message["Reply-To"] = "Replies <reply@example.com>"
+            message.set_content("Body")
+            (workspace / "message.eml").write_bytes(message.as_bytes())
+
+            fetched = agent_tools.command_fetch(workspace)
+            metadata = index.lookup_pipeline_id(pipeline_id)["metadata"]
+
+            self.assertEqual(fetched["status"], "cached")
+            self.assertEqual(metadata["sent_at"], "2026-09-28T12:34:56+08:00")
+            self.assertEqual(metadata["subject"], "Metadata subject")
+            self.assertEqual(metadata["sender"], "Sender <sender@example.com>")
+            self.assertEqual(metadata["recipients"], "One <one@example.com>, Two <two@example.com>")
+            self.assertEqual(metadata["cc"], "Copy <copy@example.com>")
+            self.assertEqual(metadata["reply_to"], "Replies <reply@example.com>")
+
     def test_individual_summary_timestamp_is_utc_iso8601(self) -> None:
         generated_at = OPENCODE_MAIL.generated_at_utc()
 

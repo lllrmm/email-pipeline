@@ -96,6 +96,26 @@ class MailIdentityIndex:
                     last_seen TEXT NOT NULL,
                     PRIMARY KEY(pipeline_id, observed_date)
                 );
+                CREATE TABLE IF NOT EXISTS email_metadata (
+                    pipeline_id TEXT PRIMARY KEY REFERENCES email_identity(pipeline_id) ON DELETE CASCADE,
+                    sent_at TEXT,
+                    date_header TEXT,
+                    subject TEXT,
+                    sender TEXT,
+                    recipients TEXT,
+                    cc TEXT,
+                    bcc TEXT,
+                    reply_to TEXT,
+                    in_reply_to TEXT,
+                    references_header TEXT,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_email_metadata_sent_at
+                    ON email_metadata(sent_at);
+                CREATE INDEX IF NOT EXISTS idx_email_metadata_sender
+                    ON email_metadata(sender);
+                CREATE INDEX IF NOT EXISTS idx_email_metadata_subject
+                    ON email_metadata(subject);
                 """
             )
             columns = {
@@ -118,6 +138,9 @@ class MailIdentityIndex:
         folder: str,
         himalaya_id: str,
         observed_date: str,
+        sent_at: str | None = None,
+        subject: str | None = None,
+        sender: str | None = None,
     ) -> None:
         now = dt.datetime.now(dt.timezone.utc).isoformat()
         with closing(self.connect()) as connection:
@@ -143,6 +166,96 @@ class MailIdentityIndex:
                     last_seen=excluded.last_seen
                 """,
                 (account, folder, himalaya_id, pipeline_id, observed_date, now),
+            )
+            if any(value is not None for value in (sent_at, subject, sender)):
+                self._upsert_metadata(
+                    connection,
+                    pipeline_id=pipeline_id,
+                    sent_at=sent_at,
+                    subject=subject,
+                    sender=sender,
+                    updated_at=now,
+                )
+            connection.commit()
+
+    @staticmethod
+    def _upsert_metadata(
+        connection: sqlite3.Connection,
+        *,
+        pipeline_id: str,
+        updated_at: str,
+        sent_at: str | None = None,
+        date_header: str | None = None,
+        subject: str | None = None,
+        sender: str | None = None,
+        recipients: str | None = None,
+        cc: str | None = None,
+        bcc: str | None = None,
+        reply_to: str | None = None,
+        in_reply_to: str | None = None,
+        references_header: str | None = None,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO email_metadata (
+                pipeline_id, sent_at, date_header, subject, sender, recipients,
+                cc, bcc, reply_to, in_reply_to, references_header, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(pipeline_id) DO UPDATE SET
+                sent_at=COALESCE(excluded.sent_at, email_metadata.sent_at),
+                date_header=COALESCE(excluded.date_header, email_metadata.date_header),
+                subject=COALESCE(excluded.subject, email_metadata.subject),
+                sender=COALESCE(excluded.sender, email_metadata.sender),
+                recipients=COALESCE(excluded.recipients, email_metadata.recipients),
+                cc=COALESCE(excluded.cc, email_metadata.cc),
+                bcc=COALESCE(excluded.bcc, email_metadata.bcc),
+                reply_to=COALESCE(excluded.reply_to, email_metadata.reply_to),
+                in_reply_to=COALESCE(excluded.in_reply_to, email_metadata.in_reply_to),
+                references_header=COALESCE(excluded.references_header, email_metadata.references_header),
+                updated_at=excluded.updated_at
+            """,
+            (
+                pipeline_id, sent_at, date_header, subject, sender, recipients,
+                cc, bcc, reply_to, in_reply_to, references_header, updated_at,
+            ),
+        )
+
+    def update_metadata(
+        self,
+        pipeline_id: str,
+        *,
+        sent_at: str | None = None,
+        date_header: str | None = None,
+        subject: str | None = None,
+        sender: str | None = None,
+        recipients: str | None = None,
+        cc: str | None = None,
+        bcc: str | None = None,
+        reply_to: str | None = None,
+        in_reply_to: str | None = None,
+        references_header: str | None = None,
+    ) -> None:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        with closing(self.connect()) as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM email_identity WHERE pipeline_id=?", (pipeline_id,)
+            ).fetchone()
+            if exists is None:
+                raise KeyError(f"unknown pipeline id: {pipeline_id}")
+            self._upsert_metadata(
+                connection,
+                pipeline_id=pipeline_id,
+                sent_at=sent_at,
+                date_header=date_header,
+                subject=subject,
+                sender=sender,
+                recipients=recipients,
+                cc=cc,
+                bcc=bcc,
+                reply_to=reply_to,
+                in_reply_to=in_reply_to,
+                references_header=references_header,
+                updated_at=now,
             )
             connection.commit()
 
@@ -218,10 +331,14 @@ class MailIdentityIndex:
                 """,
                 (value,),
             ).fetchall()
+            metadata = connection.execute(
+                "SELECT * FROM email_metadata WHERE pipeline_id=?", (value,)
+            ).fetchone()
         result = dict(row)
         result["summarized"] = bool(result.get("summarized"))
         result["locations"] = [dict(location) for location in locations]
         result["workspaces"] = [dict(workspace) for workspace in workspaces]
+        result["metadata"] = dict(metadata) if metadata is not None else None
         return result
 
 

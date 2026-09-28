@@ -148,6 +148,11 @@ mail-index.py --pipeline-id <pipeline_id>
 mail-index.py --rfc-message-id '<message@example.com>'
 ```
 
+The SQLite index keeps identity and transport location separate from a
+one-to-one `email_metadata` record. Envelope scanning stores the available sent
+time, subject, and sender. Fetching the RFC message then fills the complete
+`From`, `To`, `Cc`, `Bcc`, `Reply-To`, `In-Reply-To`, and `References` headers.
+
 Directories are created with mode `0700`; files are written atomically with
 mode `0600`. Remote images and links are recorded but never fetched.
 
