@@ -13,5 +13,5 @@ from email_pipeline.__main__ import main
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
-        sys.argv.extend(["scan-enqueue", "--date", __import__("datetime").date.today().isoformat()])
+        sys.argv.append("scan-enqueue")
     raise SystemExit(main())
