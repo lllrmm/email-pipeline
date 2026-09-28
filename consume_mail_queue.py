@@ -49,9 +49,11 @@ def process_event(event: dict, config: dict, config_path: Path, index: MailIdent
     result = register_mail(event["rfc_message_id"], event["folder"], int(event["uidvalidity"]), int(event["imap_uid"]), account=str(identity_cfg.get("account") or "outlook"), salt=get_or_create_salt(salt_path), database_path=index.path)
     pipeline_id = result["pipeline_id"]
     day = event_day(event, timezone_name)
-    mail_dir = Path.home() / ".hermes/email/daily" / day / "emails" / pipeline_id
+    proposed_dir = Path.home() / ".hermes/email/daily" / day / "emails" / pipeline_id
+    workspace = index.ensure_workspace(pipeline_id, day, proposed_dir)
+    day = workspace["date"]
+    mail_dir = Path(workspace["path"])
     mail_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    index.record_workspace(pipeline_id, day, mail_dir)
     secure_write_text(mail_dir / "request.json", json.dumps({"pipeline_id": pipeline_id, "rfc_message_id": event["rfc_message_id"], "identity_source": "rfc_message_id", "index_database": str(index.path)}, ensure_ascii=False, indent=2))
     identity = index.lookup_pipeline_id(pipeline_id)
     if identity and identity.get("summarized") is True and (mail_dir / "summary.json").is_file():

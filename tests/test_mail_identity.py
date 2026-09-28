@@ -21,7 +21,21 @@ INDEX_SPEC.loader.exec_module(INDEX_MAIL)
 
 
 class MailIdentityTests(unittest.TestCase):
-    def test_existing_database_is_migrated_with_metadata_table(self) -> None:
+    def test_fresh_database_has_four_business_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            database = Path(temp_dir) / "index.sqlite3"
+            MailIdentityIndex(database)
+            connection = sqlite3.connect(database)
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            connection.close()
+            self.assertEqual(tables - {"sqlite_sequence"}, {
+                "email",
+                "email_location",
+                "email_event_queue",
+                "email_watch_folder_state",
+            })
+
+    def test_existing_database_is_migrated_to_compact_schema(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Path(temp_dir) / "legacy.sqlite3"
             connection = sqlite3.connect(database)
@@ -59,12 +73,14 @@ class MailIdentityTests(unittest.TestCase):
 
             MailIdentityIndex(database)
             connection = sqlite3.connect(database)
-            metadata_table = connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='email_metadata'"
-            ).fetchone()
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             connection.close()
 
-            self.assertEqual(metadata_table, ("email_metadata",))
+            self.assertIn("email", tables)
+            self.assertIn("email_location", tables)
+            self.assertNotIn("email_identity", tables)
+            self.assertNotIn("email_metadata", tables)
+            self.assertNotIn("email_workspace", tables)
 
     def test_missing_rfc_message_id_is_a_hard_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -107,8 +123,7 @@ class MailIdentityTests(unittest.TestCase):
             self.assertEqual(first["pipeline_id"], second["pipeline_id"])
             self.assertEqual(identity["rfc_message_id"], "registered@example.com")
             self.assertEqual(identity["locations"][0]["folder"], "Inbox")
-            self.assertEqual(identity["workspaces"], [])
-            self.assertIsNone(identity["metadata"])
+            self.assertIsNone(identity["workspace"])
 
     def test_salted_id_is_stable_and_index_is_bidirectional(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -119,17 +134,9 @@ class MailIdentityTests(unittest.TestCase):
             self.assertNotEqual(pipeline_id, make_pipeline_id(salt, "<other@example.com>"))
 
             index = MailIdentityIndex(root / "index.sqlite3")
-            index.record(
+            index.register_identity(
                 pipeline_id=pipeline_id,
                 rfc_message_id="<message@example.com>",
-                identity_source="rfc_message_id",
-                account="outlook",
-                folder="Inbox",
-                himalaya_id="42",
-                observed_date="2026-09-28",
-                sent_at="2026-09-28T00:00:00Z",
-                subject="Initial subject",
-                sender="Sender <sender@example.com>",
             )
             index.record_imap_location(
                 pipeline_id=pipeline_id,
@@ -137,17 +144,22 @@ class MailIdentityTests(unittest.TestCase):
                 folder="Inbox",
                 uidvalidity=123,
                 uid=42,
-                observed_date="2026-09-28",
             )
             workspace = root / "2026-09-28" / "emails" / pipeline_id
-            index.record_workspace(pipeline_id, "2026-09-28", workspace)
+            index.ensure_workspace(pipeline_id, "2026-09-28", workspace)
+            index.update_metadata(
+                pipeline_id,
+                sent_at="2026-09-28T00:00:00Z",
+                subject="Initial subject",
+                sender="Sender <sender@example.com>",
+            )
             by_pipeline = index.lookup_pipeline_id(pipeline_id)
             by_rfc = index.lookup_rfc_message_id("<message@example.com>")
 
             self.assertEqual(by_pipeline["rfc_message_id"], "message@example.com")
             self.assertEqual(by_pipeline["locations"][0]["imap_uid"], 42)
             self.assertEqual(by_pipeline["locations"][0]["uidvalidity"], 123)
-            self.assertEqual(by_pipeline["workspaces"][0]["path"], str(workspace))
+            self.assertEqual(by_pipeline["workspace"]["path"], str(workspace))
             self.assertFalse(by_pipeline["summarized"])
             self.assertEqual(by_pipeline["metadata"]["subject"], "Initial subject")
             self.assertEqual(by_pipeline["metadata"]["sender"], "Sender <sender@example.com>")

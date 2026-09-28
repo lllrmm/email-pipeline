@@ -52,7 +52,6 @@ def register_mail(
         folder=folder,
         uidvalidity=uidvalidity,
         uid=uid,
-        observed_date=None,
     )
     return {
         "status": "registered" if created else "already_registered",

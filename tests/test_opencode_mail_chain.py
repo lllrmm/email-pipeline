@@ -27,15 +27,11 @@ class OpenCodeMailChainTests(unittest.TestCase):
             pipeline_id = "a" * 64
             database = workspace / "index.sqlite3"
             index = MailIdentityIndex(database)
-            index.record(
+            index.register_identity(
                 pipeline_id=pipeline_id,
                 rfc_message_id="<headers@example.com>",
-                identity_source="rfc_message_id",
-                account="outlook",
-                folder="Inbox",
-                himalaya_id="42",
-                observed_date="2026-09-28",
             )
+            index.record_imap_location(pipeline_id=pipeline_id, account="outlook", folder="Inbox", uidvalidity=123, uid=42)
             (workspace / "request.json").write_text(json.dumps({
                 "pipeline_id": pipeline_id,
                 "index_database": str(database),

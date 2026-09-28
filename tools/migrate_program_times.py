@@ -37,10 +37,8 @@ PROGRAM_TIME_KEYS = {
     "to_time",
 }
 DATABASE_COLUMNS = {
-    "email_identity": ("first_seen", "last_seen", "summarized_at"),
+    "email": ("first_seen", "last_seen", "summarized_at", "metadata_updated_at", "workspace_updated_at"),
     "email_location": ("last_seen",),
-    "email_workspace": ("last_seen",),
-    "email_metadata": ("updated_at",),
     "email_event_queue": ("received_at", "detected_at", "claimed_at", "completed_at"),
     "email_watch_state": ("updated_at",),
 }

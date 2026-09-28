@@ -1,4 +1,4 @@
-"""Stable salted email identities and SQLite location index."""
+"""Stable email identities, IMAP locations, queue state, and watcher state."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import tempfile
 from contextlib import closing
 from pathlib import Path
 from typing import Any
+
 from .program_time import now as program_now
 from .program_time import now_rfc3339
 
@@ -55,7 +56,77 @@ def normalize_rfc_message_id(rfc_message_id: str) -> str:
 
 def make_pipeline_id(salt: bytes, rfc_message_id: str) -> str:
     normalized = normalize_rfc_message_id(rfc_message_id)
-    return hashlib.sha256(salt + b"\0" + normalized.encode("utf-8", errors="strict")).hexdigest()
+    return hashlib.sha256(salt + b"\0" + normalized.encode("utf-8")).hexdigest()
+
+
+EMAIL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS email (
+    pipeline_id TEXT PRIMARY KEY,
+    rfc_message_id TEXT NOT NULL,
+    identity_source TEXT NOT NULL CHECK(identity_source IN ('rfc_message_id', 'synthetic')),
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    eml_sha256 TEXT,
+    summarized INTEGER NOT NULL DEFAULT 0,
+    summarized_at TEXT,
+    sent_at TEXT,
+    date_header TEXT,
+    subject TEXT,
+    sender TEXT,
+    recipients TEXT,
+    cc TEXT,
+    bcc TEXT,
+    reply_to TEXT,
+    in_reply_to TEXT,
+    references_header TEXT,
+    metadata_updated_at TEXT,
+    workspace_date TEXT,
+    workspace_path TEXT,
+    workspace_updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_email_rfc ON email(rfc_message_id);
+CREATE INDEX IF NOT EXISTS idx_email_sent_at ON email(sent_at);
+CREATE INDEX IF NOT EXISTS idx_email_sender ON email(sender);
+CREATE INDEX IF NOT EXISTS idx_email_subject ON email(subject);
+CREATE TABLE IF NOT EXISTS email_location (
+    account TEXT NOT NULL,
+    folder TEXT NOT NULL,
+    uidvalidity INTEGER NOT NULL,
+    imap_uid INTEGER NOT NULL,
+    pipeline_id TEXT NOT NULL REFERENCES email(pipeline_id) ON DELETE CASCADE,
+    last_seen TEXT NOT NULL,
+    PRIMARY KEY(account, folder, uidvalidity, imap_uid)
+);
+CREATE INDEX IF NOT EXISTS idx_email_location_pipeline ON email_location(pipeline_id);
+CREATE TABLE IF NOT EXISTS email_event_queue (
+    queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account TEXT NOT NULL,
+    rfc_message_id TEXT NOT NULL,
+    folder TEXT NOT NULL,
+    uidvalidity INTEGER NOT NULL,
+    imap_uid INTEGER NOT NULL,
+    sent_at TEXT,
+    received_at TEXT,
+    detected_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'done')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    claimed_at TEXT,
+    completed_at TEXT,
+    pipeline_id TEXT,
+    last_error TEXT,
+    UNIQUE(account, folder, uidvalidity, imap_uid)
+);
+CREATE INDEX IF NOT EXISTS idx_email_event_queue_status ON email_event_queue(status, queue_id);
+CREATE TABLE IF NOT EXISTS email_watch_folder_state (
+    account TEXT NOT NULL,
+    folder TEXT NOT NULL,
+    uidvalidity INTEGER NOT NULL,
+    uidnext INTEGER NOT NULL,
+    messages INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(account, folder)
+);
+"""
 
 
 class MailIdentityIndex:
@@ -73,102 +144,11 @@ class MailIdentityIndex:
 
     def _initialize(self) -> None:
         with closing(self.connect()) as connection:
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS email_identity (
-                    pipeline_id TEXT PRIMARY KEY,
-                    rfc_message_id TEXT,
-                    identity_source TEXT NOT NULL CHECK(identity_source IN ('rfc_message_id', 'synthetic')),
-                    first_seen TEXT NOT NULL,
-                    last_seen TEXT NOT NULL,
-                    eml_sha256 TEXT,
-                    summarized INTEGER NOT NULL DEFAULT 0,
-                    summarized_at TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_email_identity_rfc
-                    ON email_identity(rfc_message_id);
-                CREATE TABLE IF NOT EXISTS email_location (
-                    account TEXT NOT NULL,
-                    folder TEXT NOT NULL,
-                    himalaya_id TEXT NOT NULL,
-                    pipeline_id TEXT NOT NULL REFERENCES email_identity(pipeline_id) ON DELETE CASCADE,
-                    observed_date TEXT,
-                    last_seen TEXT NOT NULL,
-                    PRIMARY KEY(account, folder, himalaya_id)
-                );
-                CREATE INDEX IF NOT EXISTS idx_email_location_pipeline
-                    ON email_location(pipeline_id);
-                CREATE TABLE IF NOT EXISTS email_workspace (
-                    pipeline_id TEXT NOT NULL REFERENCES email_identity(pipeline_id) ON DELETE CASCADE,
-                    observed_date TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    last_seen TEXT NOT NULL,
-                    PRIMARY KEY(pipeline_id, observed_date)
-                );
-                CREATE TABLE IF NOT EXISTS email_metadata (
-                    pipeline_id TEXT PRIMARY KEY REFERENCES email_identity(pipeline_id) ON DELETE CASCADE,
-                    sent_at TEXT,
-                    date_header TEXT,
-                    subject TEXT,
-                    sender TEXT,
-                    recipients TEXT,
-                    cc TEXT,
-                    bcc TEXT,
-                    reply_to TEXT,
-                    in_reply_to TEXT,
-                    references_header TEXT,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_email_metadata_sent_at
-                    ON email_metadata(sent_at);
-                CREATE INDEX IF NOT EXISTS idx_email_metadata_sender
-                    ON email_metadata(sender);
-                CREATE INDEX IF NOT EXISTS idx_email_metadata_subject
-                    ON email_metadata(subject);
-                CREATE TABLE IF NOT EXISTS email_event_queue (
-                    queue_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    account TEXT NOT NULL,
-                    rfc_message_id TEXT NOT NULL,
-                    folder TEXT NOT NULL,
-                    uidvalidity INTEGER NOT NULL,
-                    imap_uid INTEGER NOT NULL,
-                    sent_at TEXT,
-                    received_at TEXT,
-                    detected_at TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'done')),
-                    attempts INTEGER NOT NULL DEFAULT 0,
-                    claimed_at TEXT,
-                    completed_at TEXT,
-                    pipeline_id TEXT,
-                    last_error TEXT,
-                    UNIQUE(account, folder, uidvalidity, imap_uid)
-                );
-                CREATE INDEX IF NOT EXISTS idx_email_event_queue_status
-                    ON email_event_queue(status, queue_id);
-                CREATE TABLE IF NOT EXISTS email_watch_folder_state (
-                    account TEXT NOT NULL,
-                    folder TEXT NOT NULL,
-                    uidvalidity INTEGER NOT NULL,
-                    uidnext INTEGER NOT NULL,
-                    messages INTEGER NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY(account, folder)
-                );
-                """
-            )
-            columns = {
-                row["name"] for row in connection.execute("PRAGMA table_info(email_identity)").fetchall()
-            }
-            if "summarized" not in columns:
-                connection.execute("ALTER TABLE email_identity ADD COLUMN summarized INTEGER NOT NULL DEFAULT 0")
-            if "summarized_at" not in columns:
-                connection.execute("ALTER TABLE email_identity ADD COLUMN summarized_at TEXT")
-            location_columns = {row["name"] for row in connection.execute("PRAGMA table_info(email_location)").fetchall()}
-            if "uidvalidity" not in location_columns:
-                connection.execute("ALTER TABLE email_location ADD COLUMN uidvalidity INTEGER")
-            if "imap_uid" not in location_columns:
-                connection.execute("ALTER TABLE email_location ADD COLUMN imap_uid INTEGER")
-            queue_columns = {row["name"] for row in connection.execute("PRAGMA table_info(email_event_queue)").fetchall()}
+            tables = {row["name"] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "email_identity" in tables:
+                self._migrate_legacy_schema(connection, tables)
+            connection.executescript(EMAIL_SCHEMA)
+            queue_columns = {row["name"] for row in connection.execute("PRAGMA table_info(email_event_queue)")}
             if "sent_at" not in queue_columns:
                 connection.execute("ALTER TABLE email_event_queue ADD COLUMN sent_at TEXT")
             if "received_at" not in queue_columns:
@@ -176,394 +156,234 @@ class MailIdentityIndex:
             connection.commit()
         self.path.chmod(0o600)
 
-    def record(
-        self,
-        *,
-        pipeline_id: str,
-        rfc_message_id: str | None,
-        identity_source: str,
-        account: str,
-        folder: str,
-        himalaya_id: str,
-        observed_date: str | None,
-        sent_at: str | None = None,
-        subject: str | None = None,
-        sender: str | None = None,
-    ) -> None:
-        self.register_identity(
-            pipeline_id=pipeline_id,
-            rfc_message_id=rfc_message_id,
-            identity_source=identity_source,
-        )
-        self.record_location(
-            pipeline_id=pipeline_id,
-            account=account,
-            folder=folder,
-            himalaya_id=himalaya_id,
-            observed_date=observed_date,
-        )
-        if any(value is not None for value in (sent_at, subject, sender)):
-            self.update_metadata(
-                pipeline_id,
-                sent_at=sent_at,
-                subject=subject,
-                sender=sender,
-            )
+    def _migrate_legacy_schema(self, connection: sqlite3.Connection, tables: set[str]) -> None:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.executescript(EMAIL_SCHEMA.replace("email_location", "email_location_new"))
+            identities = connection.execute("SELECT * FROM email_identity").fetchall()
+            for identity in identities:
+                pipeline_id = identity["pipeline_id"]
+                metadata = connection.execute(
+                    "SELECT * FROM email_metadata WHERE pipeline_id=?", (pipeline_id,)
+                ).fetchone() if "email_metadata" in tables else None
+                workspace = connection.execute(
+                    "SELECT * FROM email_workspace WHERE pipeline_id=? ORDER BY observed_date, last_seen LIMIT 1",
+                    (pipeline_id,),
+                ).fetchone() if "email_workspace" in tables else None
+                connection.execute(
+                    """INSERT OR REPLACE INTO email (
+                    pipeline_id,rfc_message_id,identity_source,first_seen,last_seen,eml_sha256,
+                    summarized,summarized_at,sent_at,date_header,subject,sender,recipients,cc,bcc,
+                    reply_to,in_reply_to,references_header,metadata_updated_at,workspace_date,
+                    workspace_path,workspace_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        pipeline_id, identity["rfc_message_id"], identity["identity_source"],
+                        identity["first_seen"], identity["last_seen"], identity["eml_sha256"],
+                        int(identity["summarized"]) if "summarized" in identity.keys() else 0,
+                        identity["summarized_at"] if "summarized_at" in identity.keys() else None,
+                        metadata["sent_at"] if metadata else None, metadata["date_header"] if metadata else None,
+                        metadata["subject"] if metadata else None, metadata["sender"] if metadata else None,
+                        metadata["recipients"] if metadata else None, metadata["cc"] if metadata else None,
+                        metadata["bcc"] if metadata else None, metadata["reply_to"] if metadata else None,
+                        metadata["in_reply_to"] if metadata else None,
+                        metadata["references_header"] if metadata else None,
+                        metadata["updated_at"] if metadata else None,
+                        workspace["observed_date"] if workspace else None,
+                        workspace["path"] if workspace else None,
+                        workspace["last_seen"] if workspace else None,
+                    ),
+                )
+            location_columns = {row["name"] for row in connection.execute("PRAGMA table_info(email_location)")}
+            for row in connection.execute("SELECT * FROM email_location").fetchall():
+                uidvalidity = row["uidvalidity"] if "uidvalidity" in location_columns else None
+                imap_uid = row["imap_uid"] if "imap_uid" in location_columns else None
+                if uidvalidity is None or imap_uid is None:
+                    legacy = str(row["himalaya_id"] or "") if "himalaya_id" in location_columns else ""
+                    if ":" in legacy:
+                        left, right = legacy.split(":", 1)
+                        if left.isdigit() and right.isdigit():
+                            uidvalidity, imap_uid = int(left), int(right)
+                if uidvalidity is None or imap_uid is None:
+                    continue
+                connection.execute(
+                    """INSERT OR REPLACE INTO email_location_new
+                    (account,folder,uidvalidity,imap_uid,pipeline_id,last_seen) VALUES (?,?,?,?,?,?)""",
+                    (row["account"], row["folder"], int(uidvalidity), int(imap_uid), row["pipeline_id"], row["last_seen"]),
+                )
+            connection.execute("DROP TABLE email_location")
+            connection.execute("ALTER TABLE email_location_new RENAME TO email_location")
+            for table in ("email_workspace", "email_metadata", "email_identity"):
+                if table in tables:
+                    connection.execute(f"DROP TABLE {table}")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys=ON")
 
-    def register_identity(
-        self,
-        *,
-        pipeline_id: str,
-        rfc_message_id: str,
-        identity_source: str = "rfc_message_id",
-    ) -> bool:
-        """Register one stable identity and return True only when newly inserted."""
+    def register_identity(self, *, pipeline_id: str, rfc_message_id: str, identity_source: str = "rfc_message_id") -> bool:
         rfc_message_id = normalize_rfc_message_id(rfc_message_id)
-        now = now_rfc3339()
+        timestamp = now_rfc3339()
         with closing(self.connect()) as connection:
             cursor = connection.execute(
-                """
-                INSERT INTO email_identity
-                    (pipeline_id, rfc_message_id, identity_source, first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(pipeline_id) DO NOTHING
-                """,
-                (pipeline_id, rfc_message_id, identity_source, now, now),
+                """INSERT INTO email (pipeline_id,rfc_message_id,identity_source,first_seen,last_seen)
+                VALUES (?,?,?,?,?) ON CONFLICT(pipeline_id) DO NOTHING""",
+                (pipeline_id, rfc_message_id, identity_source, timestamp, timestamp),
             )
             created = cursor.rowcount == 1
             if not created:
-                existing = connection.execute(
-                    "SELECT rfc_message_id FROM email_identity WHERE pipeline_id=?",
-                    (pipeline_id,),
-                ).fetchone()
-                if existing is None:
-                    raise RuntimeError(f"identity registration failed: {pipeline_id}")
-                existing_rfc = str(existing["rfc_message_id"] or "").strip()
-                if existing_rfc and existing_rfc != rfc_message_id.strip():
+                existing = connection.execute("SELECT rfc_message_id FROM email WHERE pipeline_id=?", (pipeline_id,)).fetchone()
+                if existing is None or existing["rfc_message_id"] != rfc_message_id:
                     raise RuntimeError(f"pipeline ID collision for RFC Message-ID: {pipeline_id}")
-                connection.execute(
-                    """
-                    UPDATE email_identity
-                    SET rfc_message_id=COALESCE(rfc_message_id, ?), last_seen=?
-                    WHERE pipeline_id=?
-                    """,
-                    (rfc_message_id, now, pipeline_id),
-                )
+                connection.execute("UPDATE email SET last_seen=? WHERE pipeline_id=?", (timestamp, pipeline_id))
             connection.commit()
         return created
 
-    def record_location(
-        self,
-        *,
-        pipeline_id: str,
-        account: str,
-        folder: str,
-        himalaya_id: str,
-        observed_date: str,
-    ) -> None:
-        now = now_rfc3339()
+    def record_imap_location(self, *, pipeline_id: str, account: str, folder: str, uidvalidity: int, uid: int) -> None:
         with closing(self.connect()) as connection:
             connection.execute(
-                """
-                INSERT INTO email_location
-                    (account, folder, himalaya_id, pipeline_id, observed_date, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(account, folder, himalaya_id) DO UPDATE SET
-                    pipeline_id=excluded.pipeline_id,
-                    observed_date=excluded.observed_date,
-                    last_seen=excluded.last_seen
-                """,
-                (account, folder, himalaya_id, pipeline_id, observed_date, now),
+                """INSERT INTO email_location (account,folder,uidvalidity,imap_uid,pipeline_id,last_seen)
+                VALUES (?,?,?,?,?,?) ON CONFLICT(account,folder,uidvalidity,imap_uid) DO UPDATE SET
+                pipeline_id=excluded.pipeline_id,last_seen=excluded.last_seen""",
+                (account, folder, int(uidvalidity), int(uid), pipeline_id, now_rfc3339()),
             )
             connection.commit()
 
-    def record_imap_location(self, *, pipeline_id: str, account: str, folder: str, uidvalidity: int, uid: int, observed_date: str | None) -> None:
-        now = now_rfc3339()
-        legacy_id = f"{uidvalidity}:{uid}"
+    def update_metadata(self, pipeline_id: str, **values: str | None) -> None:
+        allowed = ("sent_at", "date_header", "subject", "sender", "recipients", "cc", "bcc", "reply_to", "in_reply_to", "references_header")
+        updates = {key: values.get(key) for key in allowed if values.get(key) is not None}
+        if not updates:
+            return
+        assignments = ",".join(f"{key}=COALESCE(?,{key})" for key in updates)
         with closing(self.connect()) as connection:
-            connection.execute(
-                """INSERT INTO email_location (account, folder, himalaya_id, pipeline_id, observed_date, last_seen, uidvalidity, imap_uid)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(account, folder, himalaya_id) DO UPDATE SET pipeline_id=excluded.pipeline_id, observed_date=excluded.observed_date, last_seen=excluded.last_seen, uidvalidity=excluded.uidvalidity, imap_uid=excluded.imap_uid""",
-                (account, folder, legacy_id, pipeline_id, observed_date, now, int(uidvalidity), int(uid)),
+            cursor = connection.execute(
+                f"UPDATE email SET {assignments},metadata_updated_at=?,last_seen=? WHERE pipeline_id=?",
+                (*updates.values(), now_rfc3339(), now_rfc3339(), pipeline_id),
             )
-            connection.commit()
-
-    @staticmethod
-    def _upsert_metadata(
-        connection: sqlite3.Connection,
-        *,
-        pipeline_id: str,
-        updated_at: str,
-        sent_at: str | None = None,
-        date_header: str | None = None,
-        subject: str | None = None,
-        sender: str | None = None,
-        recipients: str | None = None,
-        cc: str | None = None,
-        bcc: str | None = None,
-        reply_to: str | None = None,
-        in_reply_to: str | None = None,
-        references_header: str | None = None,
-    ) -> None:
-        connection.execute(
-            """
-            INSERT INTO email_metadata (
-                pipeline_id, sent_at, date_header, subject, sender, recipients,
-                cc, bcc, reply_to, in_reply_to, references_header, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(pipeline_id) DO UPDATE SET
-                sent_at=COALESCE(excluded.sent_at, email_metadata.sent_at),
-                date_header=COALESCE(excluded.date_header, email_metadata.date_header),
-                subject=COALESCE(excluded.subject, email_metadata.subject),
-                sender=COALESCE(excluded.sender, email_metadata.sender),
-                recipients=COALESCE(excluded.recipients, email_metadata.recipients),
-                cc=COALESCE(excluded.cc, email_metadata.cc),
-                bcc=COALESCE(excluded.bcc, email_metadata.bcc),
-                reply_to=COALESCE(excluded.reply_to, email_metadata.reply_to),
-                in_reply_to=COALESCE(excluded.in_reply_to, email_metadata.in_reply_to),
-                references_header=COALESCE(excluded.references_header, email_metadata.references_header),
-                updated_at=excluded.updated_at
-            """,
-            (
-                pipeline_id, sent_at, date_header, subject, sender, recipients,
-                cc, bcc, reply_to, in_reply_to, references_header, updated_at,
-            ),
-        )
-
-    def update_metadata(
-        self,
-        pipeline_id: str,
-        *,
-        sent_at: str | None = None,
-        date_header: str | None = None,
-        subject: str | None = None,
-        sender: str | None = None,
-        recipients: str | None = None,
-        cc: str | None = None,
-        bcc: str | None = None,
-        reply_to: str | None = None,
-        in_reply_to: str | None = None,
-        references_header: str | None = None,
-    ) -> None:
-        now = now_rfc3339()
-        with closing(self.connect()) as connection:
-            exists = connection.execute(
-                "SELECT 1 FROM email_identity WHERE pipeline_id=?", (pipeline_id,)
-            ).fetchone()
-            if exists is None:
+            if cursor.rowcount != 1:
                 raise KeyError(f"unknown pipeline id: {pipeline_id}")
-            self._upsert_metadata(
-                connection,
-                pipeline_id=pipeline_id,
-                sent_at=sent_at,
-                date_header=date_header,
-                subject=subject,
-                sender=sender,
-                recipients=recipients,
-                cc=cc,
-                bcc=bcc,
-                reply_to=reply_to,
-                in_reply_to=in_reply_to,
-                references_header=references_header,
-                updated_at=now,
-            )
             connection.commit()
 
     def set_eml_sha256(self, pipeline_id: str, digest: str) -> None:
         with closing(self.connect()) as connection:
-            connection.execute(
-                "UPDATE email_identity SET eml_sha256=?, last_seen=? WHERE pipeline_id=?",
-                (digest, now_rfc3339(), pipeline_id),
-            )
+            connection.execute("UPDATE email SET eml_sha256=?,last_seen=? WHERE pipeline_id=?", (digest, now_rfc3339(), pipeline_id))
             connection.commit()
 
-    def record_workspace(self, pipeline_id: str, observed_date: str, path: Path) -> None:
-        now = now_rfc3339()
+    def ensure_workspace(self, pipeline_id: str, workspace_date: str, path: Path) -> dict[str, str]:
+        timestamp = now_rfc3339()
         with closing(self.connect()) as connection:
-            connection.execute(
-                """
-                INSERT INTO email_workspace (pipeline_id, observed_date, path, last_seen)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(pipeline_id, observed_date) DO UPDATE SET
-                    path=excluded.path,
-                    last_seen=excluded.last_seen
-                """,
-                (pipeline_id, observed_date, str(path), now),
-            )
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT workspace_date,workspace_path FROM email WHERE pipeline_id=?", (pipeline_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"unknown pipeline id: {pipeline_id}")
+            if row["workspace_path"]:
+                result = {"date": str(row["workspace_date"]), "path": str(row["workspace_path"])}
+            else:
+                connection.execute(
+                    "UPDATE email SET workspace_date=?,workspace_path=?,workspace_updated_at=?,last_seen=? WHERE pipeline_id=?",
+                    (workspace_date, str(path), timestamp, timestamp, pipeline_id),
+                )
+                result = {"date": workspace_date, "path": str(path)}
             connection.commit()
+        return result
 
     def set_summarized(self, pipeline_id: str, summarized: bool = True) -> None:
-        now = now_rfc3339()
+        timestamp = now_rfc3339()
         with closing(self.connect()) as connection:
             cursor = connection.execute(
-                """
-                UPDATE email_identity
-                SET summarized=?, summarized_at=?, last_seen=?
-                WHERE pipeline_id=?
-                """,
-                (1 if summarized else 0, now if summarized else None, now, pipeline_id),
+                "UPDATE email SET summarized=?,summarized_at=?,last_seen=? WHERE pipeline_id=?",
+                (int(summarized), timestamp if summarized else None, timestamp, pipeline_id),
             )
             if cursor.rowcount != 1:
                 raise KeyError(f"unknown pipeline id: {pipeline_id}")
             connection.commit()
 
     def enqueue_event(self, *, account: str, rfc_message_id: str, folder: str, uidvalidity: int, uid: int, received_at: str | None = None, requeue: bool = False) -> bool:
-        now = now_rfc3339()
+        timestamp = now_rfc3339()
         rfc_message_id = normalize_rfc_message_id(rfc_message_id)
         with closing(self.connect()) as connection:
             if requeue:
                 cursor = connection.execute(
-                    """INSERT INTO email_event_queue
-                    (account, rfc_message_id, folder, uidvalidity, imap_uid, received_at, detected_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(account, folder, uidvalidity, imap_uid) DO UPDATE SET
-                        received_at=COALESCE(excluded.received_at,email_event_queue.received_at),
-                        status='pending', completed_at=NULL, claimed_at=NULL, last_error=NULL""",
-                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), received_at, now),
+                    """INSERT INTO email_event_queue (account,rfc_message_id,folder,uidvalidity,imap_uid,received_at,detected_at)
+                    VALUES (?,?,?,?,?,?,?) ON CONFLICT(account,folder,uidvalidity,imap_uid) DO UPDATE SET
+                    received_at=COALESCE(excluded.received_at,email_event_queue.received_at),status='pending',
+                    completed_at=NULL,claimed_at=NULL,last_error=NULL""",
+                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), received_at, timestamp),
                 )
             else:
                 cursor = connection.execute(
-                    """INSERT INTO email_event_queue
-                    (account, rfc_message_id, folder, uidvalidity, imap_uid, received_at, detected_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(account, folder, uidvalidity, imap_uid) DO NOTHING""",
-                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), received_at, now),
+                    """INSERT INTO email_event_queue (account,rfc_message_id,folder,uidvalidity,imap_uid,received_at,detected_at)
+                    VALUES (?,?,?,?,?,?,?) ON CONFLICT(account,folder,uidvalidity,imap_uid) DO NOTHING""",
+                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), received_at, timestamp),
                 )
             connection.commit()
         return cursor.rowcount == 1
 
     def claim_events(self, limit: int = 20, stale_seconds: int = 900) -> list[dict[str, Any]]:
-        current_time = program_now()
-        stale = (current_time - dt.timedelta(seconds=stale_seconds)).isoformat(timespec="seconds")
+        current = program_now()
+        stale = (current - dt.timedelta(seconds=stale_seconds)).isoformat(timespec="seconds")
         with closing(self.connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                "UPDATE email_event_queue SET status='pending', claimed_at=NULL WHERE status='processing' AND claimed_at<?",
-                (stale,),
-            )
-            rows = connection.execute(
-                "SELECT * FROM email_event_queue WHERE status='pending' AND attempts<5 ORDER BY queue_id LIMIT ?",
-                (max(1, int(limit)),),
-            ).fetchall()
+            connection.execute("UPDATE email_event_queue SET status='pending',claimed_at=NULL WHERE status='processing' AND claimed_at<?", (stale,))
+            rows = connection.execute("SELECT * FROM email_event_queue WHERE status='pending' AND attempts<5 ORDER BY queue_id LIMIT ?", (max(1, int(limit)),)).fetchall()
             ids = [int(row["queue_id"]) for row in rows]
             if ids:
                 placeholders = ",".join("?" for _ in ids)
-                connection.execute(
-                    f"UPDATE email_event_queue SET status='processing', attempts=attempts+1, claimed_at=?, last_error=NULL WHERE queue_id IN ({placeholders})",
-                    (current_time.isoformat(timespec="seconds"), *ids),
-                )
+                connection.execute(f"UPDATE email_event_queue SET status='processing',attempts=attempts+1,claimed_at=?,last_error=NULL WHERE queue_id IN ({placeholders})", (current.isoformat(timespec="seconds"), *ids))
             connection.commit()
         return [dict(row) for row in rows]
 
     def complete_events(self, queue_ids: list[int], pipeline_ids: dict[int, str]) -> None:
-        now = now_rfc3339()
         with closing(self.connect()) as connection:
             for queue_id in queue_ids:
-                connection.execute(
-                    "UPDATE email_event_queue SET status='done', completed_at=?, pipeline_id=? WHERE queue_id=?",
-                    (now, pipeline_ids.get(queue_id), int(queue_id)),
-                )
+                connection.execute("UPDATE email_event_queue SET status='done',completed_at=?,pipeline_id=? WHERE queue_id=?", (now_rfc3339(), pipeline_ids.get(queue_id), int(queue_id)))
             connection.commit()
 
     def retry_events(self, queue_ids: list[int], error: str) -> None:
         with closing(self.connect()) as connection:
             for queue_id in queue_ids:
-                connection.execute(
-                    "UPDATE email_event_queue SET status='pending', claimed_at=NULL, last_error=? WHERE queue_id=?",
-                    (error[:1000], int(queue_id)),
-                )
+                connection.execute("UPDATE email_event_queue SET status='pending',claimed_at=NULL,last_error=? WHERE queue_id=?", (error[:1000], int(queue_id)))
             connection.commit()
 
     def list_queue_events(self) -> list[dict[str, Any]]:
         with closing(self.connect()) as connection:
-            rows = connection.execute(
-                "SELECT * FROM email_event_queue ORDER BY queue_id"
-            ).fetchall()
-        return [dict(row) for row in rows]
+            return [dict(row) for row in connection.execute("SELECT * FROM email_event_queue ORDER BY queue_id").fetchall()]
 
     def load_watch_snapshot(self, account: str) -> dict[str, dict[str, int]]:
         with closing(self.connect()) as connection:
-            rows = connection.execute(
-                "SELECT folder, uidvalidity, uidnext, messages FROM email_watch_folder_state WHERE account=?",
-                (account,),
-            ).fetchall()
-        return {
-            str(row["folder"]): {
-                "uidvalidity": int(row["uidvalidity"]),
-                "uidnext": int(row["uidnext"]),
-                "messages": int(row["messages"]),
-            }
-            for row in rows
-        }
+            rows = connection.execute("SELECT folder,uidvalidity,uidnext,messages FROM email_watch_folder_state WHERE account=?", (account,)).fetchall()
+        return {str(row["folder"]): {"uidvalidity": int(row["uidvalidity"]), "uidnext": int(row["uidnext"]), "messages": int(row["messages"])} for row in rows}
 
     def replace_watch_snapshot(self, account: str, snapshot: dict[str, dict[str, int]]) -> None:
-        updated_at = now_rfc3339()
+        timestamp = now_rfc3339()
         with closing(self.connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute("DELETE FROM email_watch_folder_state WHERE account=?", (account,))
-            connection.executemany(
-                """INSERT INTO email_watch_folder_state
-                (account, folder, uidvalidity, uidnext, messages, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                [
-                    (
-                        account,
-                        folder,
-                        int(values["uidvalidity"]),
-                        int(values["uidnext"]),
-                        int(values.get("messages", 0)),
-                        updated_at,
-                    )
-                    for folder, values in snapshot.items()
-                ],
-            )
+            connection.executemany("INSERT INTO email_watch_folder_state (account,folder,uidvalidity,uidnext,messages,updated_at) VALUES (?,?,?,?,?,?)", [(account, folder, int(values["uidvalidity"]), int(values["uidnext"]), int(values.get("messages", 0)), timestamp) for folder, values in snapshot.items()])
             connection.commit()
 
     def lookup_pipeline_id(self, pipeline_id: str) -> dict[str, Any] | None:
-        return self._lookup("pipeline_id", pipeline_id)
+        return self._lookup(pipeline_id)
 
     def lookup_rfc_message_id(self, rfc_message_id: str) -> list[dict[str, Any]]:
         normalized = normalize_rfc_message_id(rfc_message_id)
         with closing(self.connect()) as connection:
-            rows = connection.execute(
-                "SELECT pipeline_id FROM email_identity WHERE rfc_message_id=? ORDER BY first_seen",
-                (normalized,),
-            ).fetchall()
-        return [result for row in rows if (result := self.lookup_pipeline_id(row["pipeline_id"]))]
+            rows = connection.execute("SELECT pipeline_id FROM email WHERE rfc_message_id=? ORDER BY first_seen", (normalized,)).fetchall()
+        return [result for row in rows if (result := self._lookup(row["pipeline_id"]))]
 
-    def _lookup(self, field: str, value: str) -> dict[str, Any] | None:
-        if field != "pipeline_id":
-            raise ValueError("unsupported lookup field")
+    def _lookup(self, pipeline_id: str) -> dict[str, Any] | None:
         with closing(self.connect()) as connection:
-            row = connection.execute(
-                "SELECT * FROM email_identity WHERE pipeline_id=?", (value,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM email WHERE pipeline_id=?", (pipeline_id,)).fetchone()
             if row is None:
                 return None
-            locations = connection.execute(
-                """
-                SELECT account, folder, uidvalidity, imap_uid, observed_date, last_seen
-                FROM email_location WHERE pipeline_id=?
-                ORDER BY last_seen DESC, imap_uid IS NULL, imap_uid DESC
-                """,
-                (value,),
-            ).fetchall()
-            workspaces = connection.execute(
-                """
-                SELECT observed_date, path, last_seen
-                FROM email_workspace WHERE pipeline_id=? ORDER BY observed_date DESC
-                """,
-                (value,),
-            ).fetchall()
-            metadata = connection.execute(
-                "SELECT * FROM email_metadata WHERE pipeline_id=?", (value,)
-            ).fetchone()
+            locations = connection.execute("SELECT account,folder,uidvalidity,imap_uid,last_seen FROM email_location WHERE pipeline_id=? ORDER BY last_seen DESC,imap_uid DESC", (pipeline_id,)).fetchall()
         result = dict(row)
-        result["summarized"] = bool(result.get("summarized"))
+        result["summarized"] = bool(result["summarized"])
         result["locations"] = [dict(location) for location in locations]
-        result["workspaces"] = [dict(workspace) for workspace in workspaces]
-        result["metadata"] = dict(metadata) if metadata is not None else None
+        result["metadata"] = {key: result.get(key) for key in ("sent_at", "date_header", "subject", "sender", "recipients", "cc", "bcc", "reply_to", "in_reply_to", "references_header", "metadata_updated_at")}
+        result["workspace"] = {"date": result["workspace_date"], "path": result["workspace_path"]} if result.get("workspace_path") else None
         return result
 
 
