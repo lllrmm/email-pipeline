@@ -11,7 +11,7 @@ from email_pipeline import agent_tools
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("opencode_mail", ROOT / "opencode-mail.py")
+SPEC = importlib.util.spec_from_file_location("opencode_mail", ROOT / "summarize-mail-agentic.py")
 assert SPEC and SPEC.loader
 OPENCODE_MAIL = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(OPENCODE_MAIL)
@@ -22,7 +22,7 @@ class OpenCodeMailChainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             (workspace / "request.json").write_text(
-                json.dumps({"folder": "Inbox", "message_id": "42"}), encoding="utf-8"
+                json.dumps({"pipeline_id": "abc123", "index_database": str(workspace / "index.sqlite3")}), encoding="utf-8"
             )
             message = EmailMessage()
             message["Subject"] = "Linked event"

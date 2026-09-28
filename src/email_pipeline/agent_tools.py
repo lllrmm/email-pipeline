@@ -24,6 +24,7 @@ import requests
 
 from .mime_extract import extract_attachment_text, normalize_space, secure_write_bytes, secure_write_text
 from .daily_schema import validation_result
+from .mail_identity import MailIdentityIndex
 
 
 MAX_LINK_BYTES = 2 * 1024 * 1024
@@ -63,29 +64,47 @@ def decode_part(part: Message) -> str:
 
 def command_fetch(workspace: Path) -> dict[str, Any]:
     request = load_json(workspace / "request.json")
-    folder = str(request.get("folder") or "").strip()
-    message_id = str(request.get("message_id") or "").strip()
-    if not folder or not message_id:
-        raise RuntimeError("request.json requires folder and message_id")
-    command = ["himalaya", "message", "read", "--raw", "-m", folder, message_id]
+    pipeline_id = str(request.get("pipeline_id") or "").strip()
+    database = request.get("index_database")
+    if not pipeline_id or not database:
+        raise RuntimeError("request.json requires pipeline_id and index_database")
+    identity = MailIdentityIndex(Path(database)).lookup_pipeline_id(pipeline_id)
+    if not identity or not identity.get("locations"):
+        raise RuntimeError(f"no IMAP location found for pipeline id: {pipeline_id}")
+    eml_path = workspace / "message.eml"
+    if eml_path.is_file():
+        data = eml_path.read_bytes()
+        return {
+            "status": "cached",
+            "pipeline_id": pipeline_id,
+            "path": "message.eml",
+            "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        }
     last_error = ""
-    for attempt in range(3):
-        completed = subprocess.run(command, capture_output=True, timeout=90, check=False)
-        if completed.returncode == 0:
-            eml_path = workspace / "message.eml"
-            secure_write_bytes(eml_path, completed.stdout)
-            return {
-                "status": "fetched",
-                "folder": folder,
-                "message_id": message_id,
-                "path": "message.eml",
-                "size": len(completed.stdout),
-                "sha256": hashlib.sha256(completed.stdout).hexdigest(),
-            }
-        last_error = (completed.stderr or completed.stdout).decode("utf-8", errors="replace")[:500]
-        if attempt < 2:
-            import time
-            time.sleep((attempt + 1) * 5)
+    for location in identity["locations"]:
+        folder = str(location.get("folder") or "").strip()
+        message_id = str(location.get("himalaya_id") or "").strip()
+        if not folder or not message_id:
+            continue
+        command = ["himalaya", "message", "read", "--raw", "-m", folder, message_id]
+        for attempt in range(3):
+            completed = subprocess.run(command, capture_output=True, timeout=90, check=False)
+            if completed.returncode == 0:
+                secure_write_bytes(eml_path, completed.stdout)
+                digest = hashlib.sha256(completed.stdout).hexdigest()
+                MailIdentityIndex(Path(database)).set_eml_sha256(pipeline_id, digest)
+                return {
+                    "status": "fetched",
+                    "pipeline_id": pipeline_id,
+                    "path": "message.eml",
+                    "size": len(completed.stdout),
+                    "sha256": digest,
+                }
+            last_error = (completed.stderr or completed.stdout).decode("utf-8", errors="replace")[:500]
+            if attempt < 2:
+                import time
+                time.sleep((attempt + 1) * 5)
     raise RuntimeError(f"himalaya read failed: {last_error}")
 
 
@@ -148,6 +167,7 @@ def command_unpack(workspace: Path) -> dict[str, Any]:
         })
 
     manifest = {
+        "pipeline_id": load_json(workspace / "request.json").get("pipeline_id"),
         "subject": str(message.get("Subject") or ""),
         "from": str(message.get("From") or ""),
         "to": str(message.get("To") or ""),

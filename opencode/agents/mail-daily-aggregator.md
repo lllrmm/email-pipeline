@@ -20,7 +20,13 @@ permission:
   question: deny
 ---
 
-Read `individual-results.json`. It contains already-analyzed emails for one day.
+Read `pipeline-id-list.json`. For every listed pipeline ID, read exactly:
+
+```text
+emails/<pipeline_id>/summary.json
+```
+
+These files contain already-analyzed emails for one day. Do not include any email directory that is absent from the provided pipeline ID list.
 
 Produce one compact daily digest. Merge duplicate scheduled events, deadlines, and actions into one event timeline. Preserve conflicts and uncertainty. Do not include URLs, filesystem paths, attachment metadata, tool traces, session identifiers, raw email text, or evidence quotes.
 
@@ -34,7 +40,7 @@ Your output must contain exactly these top-level keys and no others: `date`, `ov
 
 Every event must contain exactly these keys and no others: `kind`, `title`, `start`, `end`, `due`, `timezone`, `location`, `priority`, `confidence`, `source_messages`.
 
-Every source message must contain exactly `folder`, `id`, and `subject`. Never output `deadlines`, `actions`, `urgent_items`, `links`, `size`, paths, images, attachments, evidence, quotes, session data, or tool traces.
+Every source message must contain exactly `pipeline_id` and `subject`. Folder names and Himalaya IDs are temporary transport locators stored only in SQLite and must never appear in your output. Never output `deadlines`, `actions`, `urgent_items`, `links`, `size`, paths, images, attachments, evidence, quotes, session data, or tool traces.
 
 Before returning your final answer:
 
@@ -60,7 +66,7 @@ Return exactly one JSON object without Markdown:
       "location": "location or null",
       "priority": "high|medium|low",
       "confidence": "high|medium|low",
-      "source_messages": [{"folder": "Inbox", "id": "42", "subject": "subject"}]
+      "source_messages": [{"pipeline_id": "salted sha256 id", "subject": "subject"}]
     }
   ],
   "warnings": ["coverage or conflict warning"],

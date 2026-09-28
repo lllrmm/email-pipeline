@@ -16,8 +16,9 @@ Read-only Outlook email extraction and digest pipeline for Hermes Agent.
 ## Layout
 
 ```text
-unpack-mail.py                     IMAP + MIME + attachment normalization stage
-summarize-mail.py                  Model-only consumer of unpack.json
+index-mail.py                      Envelope scan + stable identity/workspace index
+mail-index.py                      pipeline_id / RFC Message-ID lookup CLI
+summarize-mail-agentic.py          One pipeline_id + workdir + JSON output
 daily-mail-pipeline.py             Compatibility orchestrator
 src/email_pipeline/mime_extract.py MIME and attachment extraction library
 daily-mail-pipeline.yaml.example   Configuration without credentials
@@ -27,30 +28,31 @@ tests/                             Synthetic MIME regression tests
 ## Stage boundary
 
 ```text
-Outlook IMAP
-    -> unpack-mail.py
-    -> unpack.json + .eml + extracted text + attachments
-    -> summarize-mail.py
-    -> summary.json
+Outlook envelope metadata
+    -> index-mail.py
+    -> mail-index.json + emails/<pipeline_id>/request.json
+    -> daily-mail-pipeline.py calls summarize-mail-agentic.py per pipeline_id
+    -> aggregation.json
     -> daily-mail-pipeline.py compatibility merge
     -> bundle.json
 ```
 
-`unpack-mail.py` owns provider I/O and deterministic normalization. It has no
-model dependency. `summarize-mail.py` never invokes Himalaya and can be rerun
-with a different prompt or model without reading the mailbox again.
+`index-mail.py` never reads message bodies or unpacks MIME. The single-email
+OpenCode agent owns `mail_fetch`, `mail_unpack`, attachment extraction, and
+link inspection inside `emails/<pipeline_id>/`.
 
 ## OpenCode single-email agent chain
 
-`opencode-mail.py` provides a fully agent-driven path for one email. The entry
+`summarize-mail-agentic.py` provides a fully agent-driven path for one email. The entry
 point writes only `request.json`; the OpenCode `mail-analyzer` session must call
 restricted tools to fetch the message, unpack MIME, inspect attachments and
 links, and return evidence-backed JSON.
 
 ```bash
-python3 opencode-mail.py \
-  --mailbox Inbox \
-  --message-id 27329 \
+python3 summarize-mail-agentic.py \
+  --pipeline-id <pipeline_id> \
+  --agent-workdir ~/.hermes/email/daily/2026-09-25/emails/<pipeline_id> \
+  --output ~/.hermes/email/daily/2026-09-25/emails/<pipeline_id>/summary.json \
   --config ~/.hermes/scripts/daily-mail-pipeline.yaml
 ```
 
@@ -72,9 +74,10 @@ The agent has broad read/analysis capability inside its one-message workspace,
 but no generic shell, external-directory access, mailbox mutation, or browser
 session with cookies.
 
-After all per-email sessions finish, a second OpenCode agent named
-`mail-daily-aggregator` reads a private `individual-results.json`, deduplicates
-events/deadlines/actions, and writes the public `summary.json`. The public
+After all per-email sessions finish, `mails-aggregate-agentic.py` receives the
+pipeline ID list, date work directory, and output path. The
+`mail-daily-aggregator` reads each `emails/<pipeline_id>/summary.json`, deduplicates
+events/deadlines/actions, and writes the public `aggregation.json`. The public
 summary, compatibility bundle, and Cron stdout intentionally exclude raw mail
 paths, EML paths, attachment manifests/text paths, sizes, extraction counters,
 links, images, and attachment inventories.
@@ -90,7 +93,7 @@ not delete, add, rename, or convert fields.
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
-python3 -m py_compile daily-mail-pipeline.py unpack-mail.py summarize-mail.py src/email_pipeline/*.py
+python3 -m py_compile daily-mail-pipeline.py index-mail.py summarize-mail-agentic.py src/email_pipeline/*.py
 ```
 
 The test suite never connects to a mailbox or model API.
@@ -104,30 +107,40 @@ python3 daily-mail-pipeline.py \
   --output-root ~/.hermes/email/daily-v2-shadow
 ```
 
-To replay one known message without processing the rest of the day:
-
-```bash
-python3 daily-mail-pipeline.py \
-  --date 2026-09-25 \
-  --mailbox Inbox \
-  --message-id 27329 \
-  --output-root ~/.hermes/email/single-message-check
-```
+To revisit one indexed email, look it up by `pipeline_id` or RFC Message-ID and
+run `summarize-mail-agentic.py` with the returned pipeline ID and workspace. Folder names and
+Himalaya IDs are not part of this interface.
 
 ## Output
 
 ```text
 ~/.hermes/email/daily/YYYY-MM-DD/
-├── unpack.json
-├── summary.json
+├── mail-index.json
+├── emails/
+│   └── <pipeline_id>/
+│       ├── request.json
+│       ├── message.eml
+│       ├── manifest.json
+│       ├── parts/
+│       ├── attachments/
+│       ├── links/
+│       ├── result.json
+│       └── opencode-run/
+│           ├── events.jsonl
+│           └── metadata.json
+├── pipeline-id-list.json
+├── aggregation.json
 ├── bundle.json
-├── eml/
-├── raw/
-└── attachments/
-    └── Mailbox__MessageId/
-        ├── manifest.json
-        ├── <sha256-prefix>.<ext>
-        └── <sha256-prefix>.<ext>.txt
+```
+
+The stable identity is `SHA256(secret_salt || NUL || rfc_message_id)`. Folder
+names and Himalaya IDs are stored only as mutable transport locations in
+`~/.hermes/email/mail-index.sqlite3`; they are not used as identity or directory
+names. Lookups:
+
+```bash
+mail-index.py --pipeline-id <pipeline_id>
+mail-index.py --rfc-message-id '<message@example.com>'
 ```
 
 Directories are created with mode `0700`; files are written atomically with

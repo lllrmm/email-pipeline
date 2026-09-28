@@ -21,49 +21,42 @@ def load_script(name: str, path: Path):
 
 class StageBoundaryTests(unittest.TestCase):
     def test_unpack_stage_has_no_model_dependency(self) -> None:
-        source = (ROOT / "unpack-mail.py").read_text(encoding="utf-8")
+        source = (ROOT / "index-mail.py").read_text(encoding="utf-8")
         self.assertNotIn("import requests", source)
         self.assertNotIn("DEEPSEEK_API_KEY", source)
         self.assertNotIn("call_model(", source)
 
-    def test_summary_stage_has_no_mailbox_dependency(self) -> None:
-        source = (ROOT / "summarize-mail.py").read_text(encoding="utf-8")
-        self.assertNotIn("himalaya", source.lower())
-        self.assertNotIn("message read", source.lower())
+    def test_initiator_calls_agentic_summary_by_pipeline_id(self) -> None:
+        source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("summarize-mail-agentic.py", source)
+        self.assertIn('"--pipeline-id"', source)
+        self.assertIn('"--agent-workdir"', source)
+        self.assertIn('"--output"', source)
 
     def test_orchestrator_has_no_provider_or_parser_dependency(self) -> None:
         source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
         self.assertNotIn("import requests", source)
-        self.assertNotIn("import yaml", source)
         self.assertNotIn("himalaya", source.lower())
         self.assertNotIn("extract_message", source)
 
-    def test_image_only_summary_is_deterministic_without_model_call(self) -> None:
-        summary_module = load_script("summary_stage", ROOT / "summarize-mail.py")
-        result = summary_module.summarize_message(
-            {"image_only": True, "raw_path": None, "attachment_text_path": None},
-            {},
-            "unused",
-        )
-        self.assertEqual(result["error"], "image_only_no_ocr")
+    def test_removed_intermediate_summary_script_stays_removed(self) -> None:
+        self.assertFalse((ROOT / "summarize-mail.py").exists())
 
     def test_compatibility_bundle_joins_matching_artifacts(self) -> None:
         orchestrator = load_script("daily_orchestrator", ROOT / "daily-mail-pipeline.py")
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            unpack_path = root / "unpack.json"
+            unpack_path = root / "mail-index.json"
             summary_path = root / "summary.json"
             unpack = {
                 "schema_version": 2,
-                "artifact_type": "mail_unpack",
+                "artifact_type": "mail_index",
                 "date": "2026-09-25",
                 "messages_total": 1,
                 "messages": [{
-                    "folder": "Inbox",
-                    "id": "42",
-                    "message_id": "message@example",
+                    "pipeline_id": "abc123",
                     "subject": "Test",
-                    "raw_path": str(root / "raw.txt"),
+                    "date": "2026-09-25T10:00:00+08:00",
                 }],
             }
             unpack_bytes = json.dumps(unpack).encode("utf-8")

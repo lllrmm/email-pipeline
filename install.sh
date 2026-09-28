@@ -18,14 +18,19 @@ if [[ -f "$target" ]]; then
 fi
 
 install -m 700 "$repo_dir/daily-mail-pipeline.py" "$target"
-install -m 700 "$repo_dir/unpack-mail.py" "$script_dir/unpack-mail.py"
-install -m 700 "$repo_dir/summarize-mail.py" "$script_dir/summarize-mail.py"
-install -m 700 "$repo_dir/opencode-mail.py" "$script_dir/opencode-mail.py"
-install -m 700 "$repo_dir/opencode-daily-summary.py" "$script_dir/opencode-daily-summary.py"
+install -m 700 "$repo_dir/index-mail.py" "$script_dir/index-mail.py"
+install -m 700 "$repo_dir/mail-index.py" "$script_dir/mail-index.py"
+rm -f "$script_dir/unpack-mail.py"
+rm -f "$script_dir/summarize-mail.py"
+install -m 700 "$repo_dir/summarize-mail-agentic.py" "$script_dir/summarize-mail-agentic.py"
+rm -f "$script_dir/opencode-mail.py"
+install -m 700 "$repo_dir/mails-aggregate-agentic.py" "$script_dir/mails-aggregate-agentic.py"
+rm -f "$script_dir/opencode-daily-summary.py"
 install -d -m 700 "$package_dir"
 install -m 600 "$repo_dir/src/email_pipeline/__init__.py" "$package_dir/__init__.py"
 install -m 600 "$repo_dir/src/email_pipeline/mime_extract.py" "$package_dir/mime_extract.py"
 install -m 600 "$repo_dir/src/email_pipeline/daily_schema.py" "$package_dir/daily_schema.py"
+install -m 600 "$repo_dir/src/email_pipeline/mail_identity.py" "$package_dir/mail_identity.py"
 install -d -m 700 "$opencode_agent_dir"
 install -m 600 "$repo_dir/opencode/agents/mail-analyzer.md" "$opencode_agent_dir/mail-analyzer.md"
 install -m 600 "$repo_dir/opencode/agents/mail-daily-aggregator.md" "$opencode_agent_dir/mail-daily-aggregator.md"
@@ -50,15 +55,16 @@ install -m 600 "$repo_dir/src/email_pipeline/agent_tools.py" "$package_dir/agent
 
 python3 -m py_compile \
   "$target" \
-  "$script_dir/unpack-mail.py" \
-  "$script_dir/summarize-mail.py" \
-  "$script_dir/opencode-mail.py" \
-  "$script_dir/opencode-daily-summary.py" \
+  "$script_dir/index-mail.py" \
+  "$script_dir/mail-index.py" \
+  "$script_dir/summarize-mail-agentic.py" \
+  "$script_dir/mails-aggregate-agentic.py" \
   "$script_dir/mail-agent-tools.py" \
   "$package_dir/__init__.py" \
   "$package_dir/mime_extract.py" \
   "$package_dir/agent_tools.py" \
-  "$package_dir/daily_schema.py"
+  "$package_dir/daily_schema.py" \
+  "$package_dir/mail_identity.py"
 
 printf 'Installed read-only mail pipeline to %s\n' "$target"
 printf 'Existing YAML configuration was not modified.\n'

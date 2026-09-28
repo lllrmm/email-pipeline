@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one isolated OpenCode session that fetches and analyzes one email."""
+"""Run one isolated OpenCode session for one stable pipeline email ID."""
 
 from __future__ import annotations
 
@@ -17,8 +17,13 @@ from typing import Any
 import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
+from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
-DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes" / "email" / "opencode-runs"
 
 
 def secure_write(path: Path, text: str) -> None:
@@ -111,11 +116,11 @@ def parse_events(stdout: str) -> tuple[str | None, list[str], dict[str, Any] | N
 
 def main() -> int:
     os.umask(0o077)
-    parser = argparse.ArgumentParser(description="Let one OpenCode agent fetch and analyze one email.")
-    parser.add_argument("--mailbox", required=True)
-    parser.add_argument("--message-id", required=True)
+    parser = argparse.ArgumentParser(description="Analyze one indexed email with an OpenCode agent.")
+    parser.add_argument("--pipeline-id", required=True)
+    parser.add_argument("--agent-workdir", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--title")
     args = parser.parse_args()
 
@@ -137,15 +142,22 @@ def main() -> int:
     for path in (runtime_home, runtime_config / "opencode", runtime_data, runtime_cache, runtime_state):
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
 
+    workspace = args.agent_workdir.expanduser().resolve()
+    output_path = args.output.expanduser().resolve()
+    request_path = workspace / "request.json"
+    if not workspace.is_dir() or not request_path.is_file():
+        raise RuntimeError(f"invalid fixed email workspace: {workspace}")
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    pipeline_id = str(request.get("pipeline_id") or "")
+    if not pipeline_id or pipeline_id != args.pipeline_id:
+        raise RuntimeError("pipeline_id does not match request.json")
+    if output_path != workspace and workspace not in output_path.parents:
+        raise RuntimeError("output path must stay inside the agent work directory")
+    if output_path.name != "summary.json" or output_path.parent != workspace:
+        raise RuntimeError("single-email output must be <agent-workdir>/summary.json")
     run_id = f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
-    workspace = args.output_root.expanduser().resolve() / run_id
-    workspace.mkdir(parents=True, mode=0o700)
-    request = {
-        "folder": args.mailbox,
-        "message_id": str(args.message_id),
-        "requested_at": dt.datetime.now().astimezone().isoformat(),
-    }
-    secure_write(workspace / "request.json", json.dumps(request, ensure_ascii=False, indent=2))
+    run_dir = workspace / "opencode-run"
+    run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     prompt = (
         "Process the single email authorized by request.json. "
@@ -160,7 +172,7 @@ def main() -> int:
         "--agent", agent,
         "--model", model,
         "--dir", str(workspace),
-        "--title", args.title or f"mail:{args.mailbox}:{args.message_id}",
+        "--title", args.title or f"mail:{pipeline_id}",
         prompt,
     ]
     env = dict(os.environ)
@@ -197,25 +209,47 @@ def main() -> int:
         secure_write(workspace / "opencode-timeout.txt", str(exc))
         raise RuntimeError(f"OpenCode timed out after {timeout}s") from exc
 
-    secure_write(workspace / "events.jsonl", completed.stdout)
+    secure_write(run_dir / "events.jsonl", completed.stdout)
     if completed.stderr:
-        secure_write(workspace / "opencode.stderr.txt", completed.stderr)
+        secure_write(run_dir / "stderr.txt", completed.stderr)
     session_id, tools_used, result = parse_events(completed.stdout)
-    output = {
+    processor = {
         "processor": "opencode",
+        "pipeline_id": pipeline_id,
         "run_id": run_id,
-        "workspace": str(workspace),
         "session_id": session_id,
         "model": model,
         "tools_used": tools_used,
         "returncode": completed.returncode,
-        "result": result,
     }
-    secure_write(workspace / "result.json", json.dumps(output, ensure_ascii=False, indent=2))
+    secure_write(run_dir / "metadata.json", json.dumps({
+        "run_id": run_id,
+        "pipeline_id": pipeline_id,
+        "session_id": session_id,
+        "model": model,
+        "tools_used": tools_used,
+        "returncode": completed.returncode,
+    }, ensure_ascii=False, indent=2))
     if completed.returncode != 0 or result is None:
-        print(json.dumps({"ok": False, **output}, ensure_ascii=False, indent=2))
+        print(json.dumps({"ok": False, "pipeline_id": pipeline_id, "processor": processor}, ensure_ascii=False, indent=2))
         return 1
-    print(json.dumps({"ok": True, **output}, ensure_ascii=False, indent=2))
+    output = {
+        "schema_version": 3,
+        "artifact_type": "mail_individual_summary",
+        "pipeline_id": pipeline_id,
+        "processor": processor,
+        "analysis": result,
+    }
+    secure_write(output_path, json.dumps(output, ensure_ascii=False, indent=2))
+    index_database = request.get("index_database")
+    if index_database:
+        MailIdentityIndex(Path(index_database)).set_summarized(pipeline_id, True)
+    print(json.dumps({
+        "ok": True,
+        "pipeline_id": pipeline_id,
+        "output": str(output_path),
+        "processor": processor,
+    }, ensure_ascii=False, indent=2))
     return 0
 
 

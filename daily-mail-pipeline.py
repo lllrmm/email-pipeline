@@ -9,25 +9,15 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes" / "email" / "daily"
-
-SUMMARY_DISABLED = {
-    "importance": "normal",
-    "category": "other",
-    "course": None,
-    "deadlines": [],
-    "action_required": None,
-    "summary": "摘要阶段未运行。",
-    "should_read_full": True,
-    "error": "summary_disabled",
-}
-
 
 def secure_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -63,20 +53,52 @@ def run_stage(command: list[str]) -> dict[str, Any]:
     return result
 
 
-def message_key(message: dict[str, Any]) -> tuple[str, str, str]:
-    return (
-        str(message.get("folder") or ""),
-        str(message.get("id") or ""),
-        str(message.get("message_id") or ""),
-    )
+def run_agentic_summaries(index_path: Path, config_path: Path) -> Path:
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    workers = max(1, int((config.get("opencode") or {}).get("concurrency") or 2))
+    messages = list(index.get("messages") or [])
+    completed_ids: list[str | None] = [None] * len(messages)
+
+    def job(position: int, message: dict[str, Any]) -> tuple[int, str]:
+        pipeline_id = str(message.get("pipeline_id") or "")
+        workdir = Path(str(message.get("agent_workdir") or "")).expanduser().resolve()
+        output_path = workdir / "summary.json"
+        run_stage([
+            sys.executable,
+            str(SCRIPT_DIR / "summarize-mail-agentic.py"),
+            "--pipeline-id", pipeline_id,
+            "--agent-workdir", str(workdir),
+            "--output", str(output_path),
+            "--config", str(config_path),
+        ])
+        return position, pipeline_id
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(job, position, message) for position, message in enumerate(messages)]
+        for future in as_completed(futures):
+            position, pipeline_id = future.result()
+            completed_ids[position] = pipeline_id
+
+    pipeline_ids = [pipeline_id for pipeline_id in completed_ids if pipeline_id]
+    summary_path = index_path.with_name("aggregation.json")
+    run_stage([
+        sys.executable,
+        str(SCRIPT_DIR / "mails-aggregate-agentic.py"),
+        "--pipeline-id-list", *pipeline_ids,
+        "--agent-workdir", str(index_path.parent),
+        "--output", str(summary_path),
+        "--config", str(config_path),
+    ])
+    return summary_path
 
 
 def materialize_bundle(
-    unpack_path: Path,
+    index_path: Path,
     summary_path: Path | None,
 ) -> tuple[Path, dict[str, Any], dict[str, Any]]:
-    unpack_bytes = unpack_path.read_bytes()
-    unpack = json.loads(unpack_bytes)
+    index_bytes = index_path.read_bytes()
+    unpack = json.loads(index_bytes)
     summary: dict[str, Any] | None = None
     daily_summary: dict[str, Any]
     if summary_path:
@@ -94,8 +116,7 @@ def materialize_bundle(
 
     message_index = [
         {
-            "folder": item.get("folder"),
-            "id": item.get("id"),
+            "pipeline_id": item.get("pipeline_id"),
             "subject": item.get("subject"),
             "date": item.get("date"),
         }
@@ -113,66 +134,57 @@ def materialize_bundle(
         "message_index": message_index,
         "summary_processor": summary.get("processor") if summary else None,
     }
-    bundle_path = unpack_path.with_name("bundle.json")
+    bundle_path = index_path.with_name("bundle.json")
     secure_write_text(bundle_path, json.dumps(bundle, ensure_ascii=False, indent=2))
     return bundle_path, bundle, daily_summary
 
 
 def main() -> int:
     os.umask(0o077)
-    parser = argparse.ArgumentParser(description="Unpack mail, optionally summarize it, and build bundle.json.")
+    parser = argparse.ArgumentParser(description="Index mail, run per-email agents, aggregate, and publish the daily digest.")
     parser.add_argument("--date")
     parser.add_argument("--from", dest="date_from", metavar="YYYY-MM-DD")
     parser.add_argument("--to", dest="date_to", metavar="YYYY-MM-DD")
     parser.add_argument("--mailbox", action="append")
-    parser.add_argument("--message-id", action="append")
     parser.add_argument("--limit-per-mailbox", type=int, default=200)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--no-summary", action="store_true")
     args = parser.parse_args()
 
-    unpack_command = [
+    index_command = [
         sys.executable,
-        str(SCRIPT_DIR / "unpack-mail.py"),
+        str(SCRIPT_DIR / "index-mail.py"),
         "--config", str(args.config.expanduser()),
         "--output-root", str(args.output_root.expanduser()),
         "--limit-per-mailbox", str(args.limit_per_mailbox),
     ]
     for flag, value in (("--date", args.date), ("--from", args.date_from), ("--to", args.date_to)):
         if value:
-            unpack_command.extend([flag, value])
+            index_command.extend([flag, value])
     for mailbox in args.mailbox or []:
-        unpack_command.extend(["--mailbox", mailbox])
-    for message_id in args.message_id or []:
-        unpack_command.extend(["--message-id", message_id])
+        index_command.extend(["--mailbox", mailbox])
 
     try:
-        unpack_result = run_stage(unpack_command)
-        unpack_paths = []
-        if unpack_result.get("mode") == "range":
-            unpack_paths = [Path(item["unpack_path"]) for item in unpack_result.get("per_day") or []]
+        index_result = run_stage(index_command)
+        index_paths = []
+        if index_result.get("mode") == "range":
+            index_paths = [Path(item["index_path"]) for item in index_result.get("per_day") or []]
         else:
-            unpack_paths = [Path(unpack_result["unpack_path"])]
+            index_paths = [Path(index_result["index_path"])]
 
         per_day: list[dict[str, Any]] = []
         total_messages = 0
-        for unpack_path in unpack_paths:
+        for index_path in index_paths:
             summary_path: Path | None = None
             if not args.no_summary:
-                summary_result = run_stage([
-                    sys.executable,
-                    str(SCRIPT_DIR / "summarize-mail.py"),
-                    "--input", str(unpack_path),
-                    "--config", str(args.config.expanduser()),
-                ])
-                summary_path = Path(summary_result["summary_path"])
-            bundle_path, bundle, daily_summary = materialize_bundle(unpack_path, summary_path)
+                summary_path = run_agentic_summaries(index_path, args.config.expanduser().resolve())
+            bundle_path, bundle, daily_summary = materialize_bundle(index_path, summary_path)
             total_messages += int(bundle.get("messages_total") or 0)
             per_day.append({
                 "date": bundle.get("date"),
                 "bundle_path": str(bundle_path),
-                "unpack_path": str(unpack_path),
+                "index_path": str(index_path),
                 "summary_path": str(summary_path) if summary_path else None,
                 "messages_total": bundle.get("messages_total"),
                 "daily_summary": daily_summary,

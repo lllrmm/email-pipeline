@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run an OpenCode agent to aggregate per-email analyses for one day."""
+"""Aggregate fixed per-email agent results for one day with OpenCode."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
         sys.path.insert(0, str(candidate))
 
 from email_pipeline.daily_schema import validate_daily_summary  # noqa: E402
+from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
@@ -87,17 +88,57 @@ def parse_events(stdout: str) -> tuple[str | None, list[str], dict[str, Any] | N
     return session_id, list(dict.fromkeys(tools)), None
 
 
+def validate_pipeline_inputs(workdir: Path, pipeline_ids: list[str]) -> None:
+    for pipeline_id in pipeline_ids:
+        if len(pipeline_id) != 64 or any(char not in "0123456789abcdef" for char in pipeline_id):
+            raise RuntimeError(f"invalid pipeline id: {pipeline_id}")
+        email_dir = workdir / "emails" / pipeline_id
+        request_path = email_dir / "request.json"
+        summary_path = email_dir / "summary.json"
+        if not request_path.is_file():
+            raise RuntimeError(f"request.json missing: {pipeline_id}")
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        if request.get("pipeline_id") != pipeline_id:
+            raise RuntimeError(f"request.json does not match pipeline id: {pipeline_id}")
+        database_path = request.get("index_database")
+        if not database_path:
+            raise RuntimeError(f"index database missing from request: {pipeline_id}")
+        identity = MailIdentityIndex(Path(database_path)).lookup_pipeline_id(pipeline_id)
+        if identity is None:
+            raise RuntimeError(f"pipeline id is absent from database: {pipeline_id}")
+        if identity.get("summarized") is not True:
+            raise RuntimeError(f"pipeline id is not summarized: {pipeline_id}")
+        if not summary_path.is_file():
+            raise RuntimeError(f"summary.json missing: {pipeline_id}")
+        artifact = json.loads(summary_path.read_text(encoding="utf-8"))
+        if artifact.get("pipeline_id") != pipeline_id or not isinstance(artifact.get("analysis"), dict):
+            raise RuntimeError(f"summary.json does not match pipeline id: {pipeline_id}")
+
+
 def main() -> int:
     os.umask(0o077)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--pipeline-id-list", required=True, nargs="*")
+    parser.add_argument("--agent-workdir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args()
 
-    input_path = args.input.expanduser().resolve()
+    workdir = args.agent_workdir.expanduser().resolve()
     output_path = args.output.expanduser().resolve()
     config_path = args.config.expanduser().resolve()
+    if not workdir.is_dir():
+        raise RuntimeError(f"agent work directory does not exist: {workdir}")
+    if output_path != workdir and workdir not in output_path.parents:
+        raise RuntimeError("output path must stay inside the agent work directory")
+    if output_path.name != "aggregation.json" or output_path.parent != workdir:
+        raise RuntimeError("aggregate output must be <agent-workdir>/aggregation.json")
+    pipeline_ids = list(dict.fromkeys(args.pipeline_id_list))
+    validate_pipeline_inputs(workdir, pipeline_ids)
+    secure_write(workdir / "pipeline-id-list.json", json.dumps({
+        "date": workdir.name,
+        "pipeline_ids": pipeline_ids,
+    }, ensure_ascii=False, indent=2))
     cfg = load_config(config_path)
     oc = cfg.get("opencode") or {}
     executable = str(oc.get("executable") or (Path.home() / ".opencode" / "bin" / "opencode"))
@@ -125,9 +166,9 @@ def main() -> int:
         executable, "run", "--format", "json",
         "--agent", "mail-daily-aggregator",
         "--model", model,
-        "--dir", str(input_path.parent),
-        "--title", f"mail-daily:{input_path.parent.name}",
-        "Read individual-results.json and return the required compact daily JSON digest.",
+        "--dir", str(workdir),
+        "--title", f"mail-daily:{workdir.name}",
+        "Read pipeline-id-list.json and each emails/<pipeline_id>/summary.json, then return the required compact daily JSON digest.",
     ]
     completed = subprocess.run(
         command, stdin=subprocess.DEVNULL, text=True, capture_output=True,

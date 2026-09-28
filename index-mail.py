@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Read-only HKUST Outlook collector and MIME unpacker.
+"""Read-only Outlook envelope scanner and stable workspace indexer.
 
-This stage talks to Himalaya and writes immutable unpack bundles. It never
-calls a model and does not need an inference API key.
+This stage reads envelope metadata only. It never reads message bodies,
+downloads attachments, unpacks MIME, or calls a model.
 
 Usage:
-    python3 unpack-mail.py                                    # today
-    python3 unpack-mail.py --date 2026-09-25                  # one day
-    python3 unpack-mail.py --from 2026-09-01 --to 2026-09-27  # range backfill
+    python3 index-mail.py                                    # today
+    python3 index-mail.py --date 2026-09-25                  # one day
+    python3 index-mail.py --from 2026-09-01 --to 2026-09-27  # range backfill
 """
 from __future__ import annotations
 
@@ -33,11 +33,12 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from email_pipeline.mime_extract import (  # noqa: E402
-    extract_message,
-    secure_write_bytes,
-    secure_write_text,
-    write_manifest,
+from email_pipeline.mime_extract import secure_write_text  # noqa: E402
+from email_pipeline.mail_identity import (  # noqa: E402
+    MailIdentityIndex,
+    get_or_create_salt,
+    make_pipeline_id,
+    make_synthetic_identity,
 )
 
 # Ensure user-local binaries (himalaya lives in ~/.local/bin) are reachable
@@ -197,84 +198,63 @@ def process_message(
     folder: str,
     env: dict[str, Any],
     day_dir: Path,
-    cfg: dict[str, Any],
-    read_sem: threading.Semaphore,
+    *,
+    account: str,
+    salt: bytes,
+    index_path: Path,
 ) -> dict[str, Any]:
-    """Read and unpack one message; IMAP reads are capped by read_sem."""
+    """Create a stable identity, database location, and fixed workspace."""
     msg_id = str(env.get("id"))
-    mail = {
-        "folder": folder,
-        "id": msg_id,
-        "message_id": env.get("message-id"),
+    observed_date = envelope_local_date(env, dt.datetime.now().astimezone().tzinfo) or str(env.get("date") or "")[:10]
+    rfc_message_id = str(env.get("message-id") or "").strip() or None
+    if rfc_message_id:
+        identity_value = rfc_message_id
+        identity_source = "rfc_message_id"
+    else:
+        identity_value = make_synthetic_identity(account, folder, msg_id, observed_date)
+        identity_source = "synthetic"
+    pipeline_id = make_pipeline_id(salt, identity_value)
+    index = MailIdentityIndex(index_path)
+    index.record(
+        pipeline_id=pipeline_id,
+        rfc_message_id=rfc_message_id,
+        identity_source=identity_source,
+        account=account,
+        folder=folder,
+        himalaya_id=msg_id,
+        observed_date=observed_date,
+    )
+
+    email_dir = day_dir / "emails" / pipeline_id
+    email_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    index.record_workspace(pipeline_id, observed_date, email_dir)
+    request_path = email_dir / "request.json"
+    request = {
+        "pipeline_id": pipeline_id,
+        "rfc_message_id": rfc_message_id,
+        "identity_source": identity_source,
         "subject": env.get("subject"),
-        "from": env.get("from"),
-        "to": env.get("to"),
         "date": env.get("date"),
-        "flags": env.get("flags"),
-        "size": env.get("size"),
+        "index_database": str(index_path),
     }
-    stem = f"{safe_name(folder)}__{safe_name(msg_id)}"
-    raw_path = day_dir / "raw" / f"{stem}.txt"
-    eml_path = day_dir / "eml" / f"{stem}.eml"
-    attachment_dir = day_dir / "attachments" / stem
-    manifest_path = attachment_dir / "manifest.json"
-    _, read_delay = throttle_delays(cfg)
-    try:
-        with read_sem:
-            if read_delay:
-                time.sleep(read_delay)
-            cp = run_himalaya_bytes(
-                ["himalaya", "message", "read", "--raw", "-m", folder, msg_id],
-                cfg,
-                f"read {folder}/{msg_id}",
-            )
-        raw_message = cp.stdout or b""
-        secure_write_bytes(eml_path, raw_message)
-        extraction_cfg = cfg.get("extraction") or {}
-        attachment_cfg = cfg.get("attachments") or {}
-        extracted = extract_message(
-            raw_message,
-            attachment_dir,
-            max_body_chars=int(extraction_cfg.get("max_body_chars") or 12000),
-            max_attachment_count=int(attachment_cfg.get("max_count_per_message") or 10),
-            max_inline_image_count=int(attachment_cfg.get("max_inline_images_per_message") or 5),
-            max_single_attachment_bytes=int(attachment_cfg.get("max_single_file_mb") or 15) * 1024 * 1024,
-            max_total_attachment_bytes=int(attachment_cfg.get("max_total_file_mb") or 30) * 1024 * 1024,
-            max_attachment_text_chars=int(attachment_cfg.get("max_extracted_text_chars") or 30000),
-        )
-        body = extracted.pop("text")
-        attachment_text = extracted.pop("attachment_text")
-        secure_write_text(raw_path, body)
-        attachment_text_path = attachment_dir / "combined.txt"
-        if attachment_text:
-            secure_write_text(attachment_text_path, attachment_text)
-        write_manifest(manifest_path, {**extracted, "text": body, "attachment_text": attachment_text})
-        mail["raw_path"] = str(raw_path)
-        mail["eml_path"] = str(eml_path)
-        mail["attachment_manifest_path"] = str(manifest_path)
-        mail["attachment_text_path"] = str(attachment_text_path) if attachment_text else None
-        mail.update(extracted)
-        mail["body_excerpt_chars"] = len(body)
-        mail["attachment_text_chars"] = len(attachment_text)
-    except Exception as e:
-        try:
-            secure_write_text(raw_path, f"READ FAILED: {e}\n")
-        except Exception:
-            pass
-        mail["raw_path"] = str(raw_path)
-        mail["eml_path"] = str(eml_path)
-        mail["unpack_error"] = str(e)[:500]
-    return mail
+    secure_write_text(request_path, json.dumps(request, ensure_ascii=False, indent=2))
+    return {
+        "pipeline_id": pipeline_id,
+        "rfc_message_id": rfc_message_id,
+        "identity_source": identity_source,
+        "subject": env.get("subject"),
+        "date": env.get("date"),
+        "agent_workdir": str(email_dir),
+    }
 
 
 def main() -> int:
     os.umask(0o077)
-    parser = argparse.ArgumentParser(description="Read Outlook mail and build immutable unpack bundles.")
+    parser = argparse.ArgumentParser(description="Scan Outlook envelope metadata and build stable email workspaces.")
     parser.add_argument("--date", help="HKT date to scan, YYYY-MM-DD. Defaults to today.")
     parser.add_argument("--from", dest="date_from", metavar="YYYY-MM-DD", help="Range backfill start date (inclusive); pair with --to.")
     parser.add_argument("--to", dest="date_to", metavar="YYYY-MM-DD", help="Range backfill end date (inclusive); pair with --from.")
     parser.add_argument("--mailbox", action="append", help="Limit to one mailbox; can repeat. Defaults to all mailboxes.")
-    parser.add_argument("--message-id", action="append", help="Limit to message id(s) after mailbox/date filtering.")
     parser.add_argument("--limit-per-mailbox", type=int, default=200, help="Max envelopes per mailbox.")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help=f"YAML config path (default: {DEFAULT_CONFIG_PATH})")
     parser.add_argument("--output-root", default=str(OUT_ROOT), help=f"Output root (default: {OUT_ROOT})")
@@ -314,18 +294,14 @@ def main() -> int:
 
     out_dirs = {d: out_root / d for d in days}
     for d in days:
-        for subdir in ("raw", "eml", "attachments"):
-            path = out_dirs[d] / subdir
-            path.mkdir(parents=True, exist_ok=True, mode=0o700)
-            try:
-                path.chmod(0o700)
-            except OSError:
-                pass
+        path = out_dirs[d] / "emails"
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path.chmod(0o700)
 
     def write_error_bundle(error: str) -> str:
         bundle: dict[str, Any] = {
             "schema_version": 2,
-            "artifact_type": "mail_unpack",
+            "artifact_type": "mail_index",
             "date": first_day,
             "generated_at": generated_at,
             "config_path": str(config_path),
@@ -337,7 +313,7 @@ def main() -> int:
             bundle["backfill_days"] = days
             path = out_root / f"_backfill_error_{first_day}_{last_day}.json"
         else:
-            path = out_dirs[days[0]] / "unpack.json"
+            path = out_dirs[days[0]] / "mail-index.json"
         secure_write_text(path, json.dumps(bundle, ensure_ascii=False, indent=2))
         return str(path)
 
@@ -347,8 +323,15 @@ def main() -> int:
     except Exception as e:
         error = f"config_error: {e}"
         path = write_error_bundle(error)
-        print(json.dumps({"ok": False, "unpack_path": path, "error": error}, ensure_ascii=False))
+        print(json.dumps({"ok": False, "index_path": path, "error": error}, ensure_ascii=False))
         return 1
+
+    identity_cfg = cfg.get("identity") or {}
+    salt_path = Path(identity_cfg.get("salt_path") or (HOME / ".hermes" / "email" / "pipeline-id-salt")).expanduser().resolve()
+    database_path = Path(identity_cfg.get("database_path") or (HOME / ".hermes" / "email" / "mail-index.sqlite3")).expanduser().resolve()
+    account_name = str(identity_cfg.get("account") or "outlook")
+    salt = get_or_create_salt(salt_path)
+    MailIdentityIndex(database_path)
 
     scan_tz_name = str((cfg.get("scan") or {}).get("timezone") or "Asia/Hong_Kong")
     try:
@@ -367,15 +350,13 @@ def main() -> int:
         except Exception as e:
             error = f"mailbox_list_failed: {e}"
             path = write_error_bundle(error)
-            print(json.dumps({"ok": False, "unpack_path": path, "error": error}, ensure_ascii=False))
+            print(json.dumps({"ok": False, "index_path": path, "error": error}, ensure_ascii=False))
             return 1
 
     concurrency_cfg = cfg.get("concurrency") or {}
     scan_workers = max(1, int(concurrency_cfg.get("mailbox_scan") or 1))
-    unpack_workers = max(1, int(concurrency_cfg.get("unpack") or concurrency_cfg.get("summarize") or 1))
-    imap_read_workers = max(1, int(concurrency_cfg.get("imap_read") or 1))
-    read_sem = threading.Semaphore(imap_read_workers)
-    concurrency_info = {"mailbox_scan": scan_workers, "imap_read": imap_read_workers, "unpack": unpack_workers}
+    index_workers = max(1, int(concurrency_cfg.get("index") or 4))
+    concurrency_info = {"mailbox_scan": scan_workers, "index": index_workers}
     scan_delay, _ = throttle_delays(cfg)
 
     # ---- scan folders -----------------------------------------------------
@@ -389,9 +370,6 @@ def main() -> int:
                 f"scan {folder}",
             )
             envelopes = [e for e in data.get("envelopes", []) if envelope_in_window(e, scan_tz, first_day, window_end)]
-            if args.message_id:
-                allowed_ids = {str(value) for value in args.message_id}
-                envelopes = [e for e in envelopes if str(e.get("id")) in allowed_ids]
             return folder, envelopes, None
         except Exception as e:
             return folder, [], str(e)[:500]
@@ -417,7 +395,7 @@ def main() -> int:
         flush=True,
     )
 
-    # ---- read + unpack ----------------------------------------------------
+    # ---- create stable per-message workspaces ----------------------------
     progress_lock = threading.Lock()
     progress = {"done": 0}
 
@@ -428,15 +406,12 @@ def main() -> int:
                 mailboxes[fi],
                 env,
                 out_dirs[day],
-                cfg,
-                read_sem,
+                account=account_name,
+                salt=salt,
+                index_path=database_path,
             )
         except Exception as e:
-            mail = {
-                "folder": mailboxes[fi],
-                "id": str(env.get("id")),
-                "unpack_error": f"worker_failed: {e}",
-            }
+            mail = {"unpack_error": f"worker_failed: {e}"}
         with progress_lock:
             progress["done"] += 1
             if progress["done"] % 25 == 0 or progress["done"] == len(pending):
@@ -444,26 +419,35 @@ def main() -> int:
         return day, fi, ei, mail
 
     results: dict[str, list[tuple[int, int, dict[str, Any]]]] = {d: [] for d in days}
-    with ThreadPoolExecutor(max_workers=unpack_workers) as unpack_pool:
-        message_futures = [unpack_pool.submit(job, item) for item in pending]
+    with ThreadPoolExecutor(max_workers=index_workers) as index_pool:
+        message_futures = [index_pool.submit(job, item) for item in pending]
         for fut in as_completed(message_futures):
             day, fi, ei, mail = fut.result()
             results[day].append((fi, ei, mail))
 
     # ---- write immutable per-day unpack bundles ---------------------------
     mailboxes_failed_out = [e for _, e in sorted(folder_failures)]
-    unpack_paths: dict[str, str] = {}
+    index_paths: dict[str, str] = {}
     per_day: list[dict[str, Any]] = []
     total_messages = 0
     for d in days:
-        messages = sorted(results[d], key=lambda x: (x[0], x[1]))
+        ordered = sorted(results[d], key=lambda x: (x[0], x[1]))
+        unique_messages: dict[str, dict[str, Any]] = {}
+        errors: list[dict[str, Any]] = []
+        for _, _, message in ordered:
+            pipeline_id = message.get("pipeline_id")
+            if pipeline_id:
+                unique_messages[pipeline_id] = message
+            else:
+                errors.append(message)
+        messages = list(unique_messages.values()) + errors
         bundle: dict[str, Any] = {
             "schema_version": 2,
-            "artifact_type": "mail_unpack",
+            "artifact_type": "mail_index",
             "date": d,
             "generated_at": generated_at,
             "range": f"HKT {d} 00:00 to {next_day(d)} 00:00 (half-open)",
-            "account": "outlook / rlidf@connect.ust.hk",
+            "account": account_name,
             "scan_scope": "all himalaya mailboxes including Canvas, Inbox, Carear Center, Junk Email, Deleted Items, __MINIMIZED/*",
             "config_path": str(config_path),
             "timezone": scan_tz_name,
@@ -471,25 +455,25 @@ def main() -> int:
             "mailboxes_total": len(mailboxes),
             "mailboxes_failed": mailboxes_failed_out,
             "messages_total": len(messages),
-            "messages": [m for _, _, m in messages],
+            "messages": messages,
         }
         if range_mode:
             bundle["backfill"] = {"from": first_day, "to": last_day, "days": len(days)}
-        unpack_path = out_dirs[d] / "unpack.json"
-        secure_write_text(unpack_path, json.dumps(bundle, ensure_ascii=False, indent=2))
-        unpack_paths[d] = str(unpack_path)
+        index_path = out_dirs[d] / "mail-index.json"
+        secure_write_text(index_path, json.dumps(bundle, ensure_ascii=False, indent=2))
+        index_paths[d] = str(index_path)
         total_messages += len(messages)
         per_day.append({
             "date": d,
-            "unpack_path": str(unpack_path),
+            "index_path": str(index_path),
             "messages_total": len(messages),
-            "errors": sum(1 for _, _, m in messages if m.get("unpack_error")),
+            "errors": sum(1 for m in messages if m.get("unpack_error")),
         })
 
     if not range_mode:
         print(json.dumps({
             "ok": True,
-            "unpack_path": unpack_paths[days[0]],
+            "index_path": index_paths[days[0]],
             "generated_at": generated_at,
             "mailboxes_total": len(mailboxes),
             "mailboxes_failed": mailboxes_failed_out,

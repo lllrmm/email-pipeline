@@ -20,10 +20,14 @@ opencode:
 scan:
   timezone: "Asia/Hong_Kong"
 
+identity:
+  account: "outlook"
+  salt_path: "/home/daniel/.hermes/email/pipeline-id-salt"
+  database_path: "/home/daniel/.hermes/email/mail-index.sqlite3"
+
 concurrency:
   mailbox_scan: 1
-  imap_read: 1
-  unpack: 4
+  index: 4
   summarize: 8
 
 throttle:

@@ -13,7 +13,7 @@ EVENT_KEYS = {
     "kind", "title", "start", "end", "due", "timezone", "location",
     "priority", "confidence", "source_messages",
 }
-SOURCE_KEYS = {"folder", "id", "subject"}
+SOURCE_KEYS = {"pipeline_id", "subject"}
 
 
 def validate_daily_summary(value: dict[str, Any]) -> None:
