@@ -20,7 +20,10 @@ scan_mails.py                      Envelope scan + stable identity/workspace ind
 index_mail.py                      Register one RFC Message-ID and return pipeline_id/status
 mail-index.py                      pipeline_id / RFC Message-ID lookup CLI
 summarize-mail-agentic.py          One pipeline_id + workdir + JSON output
-daily-mail-pipeline.py             Compatibility orchestrator
+daily-mail-pipeline.py             Scan and enqueue fallback producer
+consume_mail_queue.py              Durable queue consumer and summarizer
+aggregate-mails-agentic.py         Aggregate an explicit pipeline ID list
+get_daily_aggregation.py           Wait for one date's queue, then aggregate
 src/email_pipeline/mime_extract.py MIME and attachment extraction library
 daily-mail-pipeline.yaml.example   Configuration without credentials
 tests/                             Synthetic MIME regression tests

@@ -461,6 +461,13 @@ class MailIdentityIndex:
                 )
             connection.commit()
 
+    def list_queue_events(self) -> list[dict[str, Any]]:
+        with closing(self.connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM email_event_queue ORDER BY queue_id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def lookup_pipeline_id(self, pipeline_id: str) -> dict[str, Any] | None:
         return self._lookup("pipeline_id", pipeline_id)
 

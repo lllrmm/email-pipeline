@@ -18,6 +18,7 @@ install -m 700 "$repo_dir/scan_mails.py" "$script_dir/scan_mails.py"
 install -m 700 "$repo_dir/index_mail.py" "$script_dir/index_mail.py"
 install -m 700 "$repo_dir/watch_mails.py" "$script_dir/watch_mails.py"
 install -m 700 "$repo_dir/consume_mail_queue.py" "$script_dir/consume_mail_queue.py"
+install -m 700 "$repo_dir/get_daily_aggregation.py" "$script_dir/get_daily_aggregation.py"
 rm -f "$script_dir/index-mail.py"
 install -m 700 "$repo_dir/mail-index.py" "$script_dir/mail-index.py"
 rm -f "$script_dir/unpack-mail.py"
@@ -61,6 +62,7 @@ python3 -m py_compile \
   "$script_dir/index_mail.py" \
   "$script_dir/watch_mails.py" \
   "$script_dir/consume_mail_queue.py" \
+  "$script_dir/get_daily_aggregation.py" \
   "$script_dir/mail-index.py" \
   "$script_dir/summarize-mail-agentic.py" \
   "$script_dir/aggregate-mails-agentic.py" \

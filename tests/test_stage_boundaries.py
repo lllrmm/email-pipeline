@@ -85,6 +85,12 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn("summarize-mail-agentic.py", consumer)
         self.assertNotIn("aggregate-mails-agentic.py", consumer)
 
+    def test_daily_aggregation_waits_for_queue_completion(self) -> None:
+        source = (ROOT / "get_daily_aggregation.py").read_text(encoding="utf-8")
+        self.assertIn("wait_for_done", source)
+        self.assertIn('event.get("status") != "done"', source)
+        self.assertIn("aggregate-mails-agentic.py", source)
+
     def test_aggregation_does_not_materialize_pipeline_id_list(self) -> None:
         source = (ROOT / "aggregate-mails-agentic.py").read_text(encoding="utf-8")
 
