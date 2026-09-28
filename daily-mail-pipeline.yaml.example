@@ -29,7 +29,7 @@ watch:
   poll_seconds: 60
   debounce_seconds: 10
 
-day_boundary:
+program:
   timezone: "Asia/Hong_Kong"
 
 identity:

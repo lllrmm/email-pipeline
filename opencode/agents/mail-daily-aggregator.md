@@ -50,7 +50,7 @@ Every action item must contain exactly: `title`, `content`, `due`, `priority`, `
 
 `content` is mandatory and must be a concise, non-empty Chinese description of the item itself. For a scheduled item, describe what happens at that time. For a deadline, describe what must be completed by that time. For an action, describe what the user should do and the essential context. Never emit a time-only item.
 
-Every source message must contain exactly `pipeline_id` and `subject`. Folder names and Himalaya IDs are temporary transport locators stored only in SQLite and must never appear in your output. Never output top-level `deadlines`, top-level `actions`, `urgent_items`, `links`, `size`, paths, images, attachments, evidence, quotes, session data, or tool traces.
+Every source message must contain exactly `pipeline_id` and `subject`. Folder names and IMAP UIDs are temporary transport locators stored only in SQLite and must never appear in your output. Never output top-level `deadlines`, top-level `actions`, `urgent_items`, `links`, `size`, paths, images, attachments, evidence, quotes, session data, or tool traces.
 
 Before returning your final answer:
 

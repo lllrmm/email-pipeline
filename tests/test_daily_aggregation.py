@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from email_pipeline.mail_identity import MailIdentityIndex
+from email_pipeline.program_time import configure_program_timezone
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,26 +47,29 @@ class DailyAggregationTests(unittest.TestCase):
         self.assertNotIn("included_pipeline_ids", daily_summary)
 
     def test_email_time_bounds_compare_actual_instants(self) -> None:
+        configure_program_timezone("Asia/Hong_Kong")
         earliest, latest = MODULE.email_time_bounds([
             "2026-09-25T12:00:00+08:00",
             "2026-09-25T05:00:00Z",
             "not-a-date",
         ])
 
-        self.assertEqual(earliest, "2026-09-25T04:00:00Z")
-        self.assertEqual(latest, "2026-09-25T05:00:00Z")
+        self.assertEqual(earliest, "2026-09-25T12:00:00+08:00")
+        self.assertEqual(latest, "2026-09-25T13:00:00+08:00")
 
-    def test_aggregation_timestamp_is_utc_iso8601(self) -> None:
-        generated_at = MODULE.generated_at_utc()
+    def test_aggregation_timestamp_uses_configured_timezone(self) -> None:
+        configure_program_timezone("Asia/Hong_Kong")
+        generated_at = MODULE.generated_at()
 
-        self.assertTrue(generated_at.endswith("Z"))
+        self.assertTrue(generated_at.endswith("+08:00"))
         parsed = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-        self.assertEqual(parsed.utcoffset(), dt.timedelta(0))
+        self.assertEqual(parsed.utcoffset(), dt.timedelta(hours=8))
 
-    def test_aggregation_filename_uses_generated_utc_time(self) -> None:
+    def test_aggregation_filename_uses_configured_timezone(self) -> None:
+        configure_program_timezone("Asia/Hong_Kong")
         filename = MODULE.aggregation_filename("2026-09-28T10:04:35.098404Z")
 
-        self.assertEqual(filename, "aggregation-20260928T100435.098404Z.json")
+        self.assertEqual(filename, "aggregation-20260928T180435.098404+0800.json")
 
     def test_parser_extracts_json_from_surrounding_text(self) -> None:
         value = MODULE.parse_json_object('Result follows:\n```json\n{"overview":"ok"}\n```')

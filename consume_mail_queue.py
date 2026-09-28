@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -23,6 +24,7 @@ from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.mail_identity import get_or_create_salt  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 from index_mail import register_mail  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone, filename_timestamp, now_rfc3339  # noqa: E402
 
 STOP = False
 CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
@@ -42,10 +44,10 @@ def event_day(event: dict, timezone_name: str) -> str:
 
 
 def write_scan_log(events: list[dict], timezone_name: str) -> Path:
-    now = dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    now = now_rfc3339()
     day = event_day(events[0], timezone_name)
-    name = dt.datetime.fromisoformat(now.replace("Z", "+00:00")).strftime("scan-%Y%m%dT%H%M%S.%fZ.json")
-    mails = [{"rfc_message_id": e["rfc_message_id"], "folder": e["folder"], "uidvalidity": e["uidvalidity"], "uid": e["imap_uid"]} for e in events]
+    name = f"scan-{filename_timestamp(dt.datetime.fromisoformat(now))}.json"
+    mails = [{"rfc_message_id": e["rfc_message_id"], "folder": e["folder"], "uidvalidity": e["uidvalidity"], "uid": e["imap_uid"], "received_at": e.get("received_at")} for e in events]
     path = Path.home() / ".hermes/email/daily" / day / "scan-log" / name
     secure_write_text(path, json.dumps({"schema_version": 2, "artifact_type": "mail_scan_log", "status": "completed", "source": "imap_event_queue", "date": day, "generated_at": now, "messages_total": len(mails), "mails": mails, "rfc_message_ids": [m["rfc_message_id"] for m in mails], "mailboxes_total": len({m["folder"] for m in mails}), "mailboxes_failed": []}, ensure_ascii=False, indent=2))
     return path
@@ -77,7 +79,8 @@ def main() -> int:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     identity = config.get("identity") or {}
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
-    timezone_name = str((config.get("day_boundary") or {}).get("timezone") or "UTC")
+    timezone_name = str((config.get("program") or {}).get("timezone") or "UTC")
+    configure_program_timezone(timezone_name)
     index = MailIdentityIndex(database)
     while not STOP:
         events = index.claim_events(limit=20)

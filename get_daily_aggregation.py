@@ -22,6 +22,7 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
         sys.path.insert(0, str(candidate))
 
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes/email/daily"
@@ -35,7 +36,7 @@ def parse_timestamp(value: Any) -> dt.datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+        return None
     return parsed
 
 
@@ -129,7 +130,8 @@ def main() -> int:
 
     config_path = args.config.expanduser().resolve()
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    timezone = ZoneInfo(str((config.get("day_boundary") or {}).get("timezone") or "UTC"))
+    timezone = ZoneInfo(str((config.get("program") or {}).get("timezone") or "UTC"))
+    configure_program_timezone(str(timezone))
     target_date = args.date or dt.datetime.now(timezone).date().isoformat()
     dt.date.fromisoformat(target_date)
     identity = config.get("identity") or {}

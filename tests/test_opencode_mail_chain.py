@@ -10,6 +10,7 @@ from pathlib import Path
 
 from email_pipeline import agent_tools
 from email_pipeline.mail_identity import MailIdentityIndex
+from email_pipeline.program_time import configure_program_timezone
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,12 +63,13 @@ class OpenCodeMailChainTests(unittest.TestCase):
             self.assertEqual(metadata["cc"], "Copy <copy@example.com>")
             self.assertEqual(metadata["reply_to"], "Replies <reply@example.com>")
 
-    def test_individual_summary_timestamp_is_utc_iso8601(self) -> None:
-        generated_at = OPENCODE_MAIL.generated_at_utc()
+    def test_individual_summary_timestamp_uses_configured_timezone(self) -> None:
+        configure_program_timezone("Asia/Hong_Kong")
+        generated_at = OPENCODE_MAIL.generated_at()
 
-        self.assertTrue(generated_at.endswith("Z"))
+        self.assertTrue(generated_at.endswith("+08:00"))
         parsed = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-        self.assertEqual(parsed.utcoffset(), dt.timedelta(0))
+        self.assertEqual(parsed.utcoffset(), dt.timedelta(hours=8))
 
     def test_lossless_unpack_and_agent_requested_extraction(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

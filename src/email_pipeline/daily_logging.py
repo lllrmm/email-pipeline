@@ -35,13 +35,13 @@ class LocalDailyFileHandler(logging.Handler):
 
 class ZonedFormatter(logging.Formatter):
     def __init__(self, timezone: ZoneInfo) -> None:
-        super().__init__("%(asctime)s %(levelname)s %(name)s %(message)s", "%Y-%m-%dT%H:%M:%S%z")
+        super().__init__("%(asctime)s %(levelname)s %(name)s %(message)s")
         self.timezone = timezone
         self.default_msec_format = None
 
     def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
         value = dt.datetime.fromtimestamp(record.created, self.timezone)
-        return value.strftime(datefmt or "%Y-%m-%dT%H:%M:%S%z")
+        return value.isoformat(timespec="seconds")
 
 
 def configure_daily_logger(output_root: Path, component: str, timezone_name: str) -> logging.Logger:

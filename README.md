@@ -2,9 +2,11 @@
 
 Read-only Outlook IMAPClient email extraction and digest pipeline for Hermes Agent.
 
-All program-controlled timestamps and API ranges use UTC. Times authored inside
-email headers, bodies, attachments, or linked pages are not normalized by the
-pipeline; they are preserved as source material for the analysis agent.
+All program-controlled timestamps are RFC3339 values in the timezone configured
+by `program.timezone` in `daily-mail-pipeline.yaml`. API ranges accept any
+timezone-aware RFC3339 values and compare them as absolute instants. Times
+authored inside email headers, bodies, attachments, or linked pages are not
+normalized; they remain source material for the analysis agent.
 
 ## What it fixes
 
@@ -39,13 +41,14 @@ tests/                             Synthetic MIME regression tests
 Outlook envelope metadata
     -> scan_mails.py
     -> index_mail.py registers each RFC Message-ID
-    -> scan-log/scan-<generated UTC time>.json + emails/<pipeline_id>/request.json
-    -> daily-mail-pipeline.py calls summarize-mail-agentic.py per pipeline_id
-    -> aggregation/aggregation-<generated UTC time>.json
+    -> scan-log/scan-<generated program time>.json
+    -> durable email_event_queue
+    -> consume_mail_queue.py registers and summarizes each pending email
+    -> explicit aggregate-mails-agentic.py call
 ```
 
-`scan_mails.py` accepts a date or date range and outputs the discovered
-`rfc_message_id`, folder, and folder-scoped Himalaya ID triples. `index_mail.py`
+`scan_mails.py` accepts an aware RFC3339 time range and outputs the discovered
+`rfc_message_id`, folder, UIDVALIDITY, and folder-scoped IMAP UID. `index_mail.py`
 accepts one such triple, registers the stable identity and transport location,
 and returns the `pipeline_id` with status `registered` or
 `already_registered`. Neither script reads message bodies or unpacks MIME. The single-email
@@ -101,10 +104,10 @@ paths, EML paths, attachment manifests/text paths, sizes, extraction counters,
 links, images, and attachment inventories.
 
 Every per-email `summary.json` and daily aggregation JSON has a top-level
-`generated_at` timestamp in UTC ISO 8601 format.
+`generated_at` RFC3339 timestamp in the configured program timezone.
 Each aggregation artifact also has a top-level `included_pipeline_ids`
 array containing the complete validated, de-duplicated input list in order.
-Python derives top-level `earliest_email_at` and `latest_email_at` UTC timestamps
+Python derives top-level `earliest_email_at` and `latest_email_at` timestamps
 from those included messages; the aggregation agent does not generate them.
 
 The public daily timeline uses one `events` array. Each event contains its own
@@ -124,18 +127,17 @@ python3 -m py_compile daily-mail-pipeline.py scan_mails.py index_mail.py summari
 
 The test suite never connects to a mailbox or model API.
 
-For a read-only shadow run on a real mailbox without model calls:
+For a read-only fallback scan that only enqueues newly discovered messages:
 
 ```bash
 python3 daily-mail-pipeline.py \
   --date 2026-09-27 \
-  --no-summary \
   --output-root ~/.hermes/email/daily-v2-shadow
 ```
 
 To revisit one indexed email, look it up by `pipeline_id` or RFC Message-ID and
 run `summarize-mail-agentic.py` with the returned pipeline ID and workspace. Folder names and
-Himalaya IDs are not part of this interface.
+IMAP UIDs are not part of this interface.
 
 ## Output
 
@@ -149,14 +151,14 @@ Himalaya IDs are not part of this interface.
 │       ├── parts/
 │       ├── attachments/
 │       ├── links/
-│       ├── result.json
+│       ├── summary.json
 │       └── opencode-run/
 │           ├── events.jsonl
 │           └── metadata.json
 ├── scan-log/
-│   └── scan-20260928T095900.000000Z.json
+│   └── scan-20260928T175900.000000+0800.json
 ├── aggregation/
-│   ├── aggregation-20260928T100435.098404Z.json
+│   ├── aggregation-20260928T180435.098404+0800.json
 │   └── _run/
 │       ├── events.jsonl
 │       └── stderr.txt
@@ -168,7 +170,7 @@ identity, metadata, IMAP location, and workspace information remain
 authoritative in SQLite.
 
 The stable identity is `SHA256(secret_salt || NUL || rfc_message_id)`. Folder
-names and Himalaya IDs are stored only as mutable transport locations in
+names and IMAP UIDs are stored only as mutable transport locations in
 `~/.hermes/email/mail-index.sqlite3`; they are not used as identity or directory
 names. Lookups:
 

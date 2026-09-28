@@ -17,6 +17,7 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
         sys.path.insert(0, str(candidate))
 
 from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id, normalize_rfc_message_id  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
@@ -71,6 +72,7 @@ def main() -> int:
     args = parser.parse_args()
 
     config = yaml.safe_load(args.config.expanduser().resolve().read_text(encoding="utf-8")) or {}
+    configure_program_timezone(str((config.get("program") or {}).get("timezone") or "UTC"))
     identity = config.get("identity") or {}
     database_path = Path(identity.get("database_path") or (Path.home() / ".hermes" / "email" / "mail-index.sqlite3")).expanduser().resolve()
     salt_path = Path(identity.get("salt_path") or (Path.home() / ".hermes" / "email" / "pipeline-id-salt")).expanduser().resolve()

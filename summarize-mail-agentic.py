@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
 import os
 import re
@@ -23,12 +22,13 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
         sys.path.insert(0, str(candidate))
 
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone, now, now_rfc3339  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
 
-def generated_at_utc() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+def generated_at() -> str:
+    return now_rfc3339()
 
 
 def secure_write(path: Path, text: str) -> None:
@@ -141,6 +141,8 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = load_config(args.config.expanduser().resolve())
+    timezone_name = str((cfg.get("program") or {}).get("timezone") or "UTC")
+    configure_program_timezone(timezone_name)
     opencode_cfg = cfg.get("opencode") or {}
     executable = str(opencode_cfg.get("executable") or (Path.home() / ".opencode" / "bin" / "opencode"))
     agent = str(opencode_cfg.get("agent") or "mail-analyzer")
@@ -170,7 +172,7 @@ def main() -> int:
     runtime_state = runtime_instance / "state"
     for path in (runtime_home, runtime_config / "opencode", runtime_data, runtime_cache, runtime_state):
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    run_id = f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    run_id = f"{now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
     run_dir = workspace / "opencode-run"
     run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     for name in ("events.jsonl", "stderr.txt", "metadata.json", "timeout.txt"):
@@ -206,6 +208,7 @@ def main() -> int:
     env["XDG_CACHE_HOME"] = str(runtime_cache)
     env["XDG_STATE_HOME"] = str(runtime_state)
     env["OPENCODE_CONFIG_DIR"] = str(runtime_config / "opencode")
+    env["EMAIL_PIPELINE_TIMEZONE"] = timezone_name
     try:
         completed = subprocess.run(
             command,
@@ -248,7 +251,7 @@ def main() -> int:
     output = {
         "schema_version": 3,
         "artifact_type": "mail_individual_summary",
-        "generated_at": generated_at_utc(),
+        "generated_at": generated_at(),
         "pipeline_id": pipeline_id,
         "processor": processor,
         "analysis": result,

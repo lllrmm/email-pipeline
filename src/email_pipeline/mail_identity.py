@@ -12,6 +12,8 @@ import tempfile
 from contextlib import closing
 from pathlib import Path
 from typing import Any
+from .program_time import now as program_now
+from .program_time import now_rfc3339
 
 
 def secure_write(path: Path, data: bytes) -> None:
@@ -208,7 +210,7 @@ class MailIdentityIndex:
     ) -> bool:
         """Register one stable identity and return True only when newly inserted."""
         rfc_message_id = normalize_rfc_message_id(rfc_message_id)
-        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        now = now_rfc3339()
         with closing(self.connect()) as connection:
             cursor = connection.execute(
                 """
@@ -250,7 +252,7 @@ class MailIdentityIndex:
         himalaya_id: str,
         observed_date: str,
     ) -> None:
-        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        now = now_rfc3339()
         with closing(self.connect()) as connection:
             connection.execute(
                 """
@@ -267,7 +269,7 @@ class MailIdentityIndex:
             connection.commit()
 
     def record_imap_location(self, *, pipeline_id: str, account: str, folder: str, uidvalidity: int, uid: int, observed_date: str | None) -> None:
-        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        now = now_rfc3339()
         legacy_id = f"{uidvalidity}:{uid}"
         with closing(self.connect()) as connection:
             connection.execute(
@@ -335,7 +337,7 @@ class MailIdentityIndex:
         in_reply_to: str | None = None,
         references_header: str | None = None,
     ) -> None:
-        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        now = now_rfc3339()
         with closing(self.connect()) as connection:
             exists = connection.execute(
                 "SELECT 1 FROM email_identity WHERE pipeline_id=?", (pipeline_id,)
@@ -363,12 +365,12 @@ class MailIdentityIndex:
         with closing(self.connect()) as connection:
             connection.execute(
                 "UPDATE email_identity SET eml_sha256=?, last_seen=? WHERE pipeline_id=?",
-                (digest, dt.datetime.now(dt.timezone.utc).isoformat(), pipeline_id),
+                (digest, now_rfc3339(), pipeline_id),
             )
             connection.commit()
 
     def record_workspace(self, pipeline_id: str, observed_date: str, path: Path) -> None:
-        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        now = now_rfc3339()
         with closing(self.connect()) as connection:
             connection.execute(
                 """
@@ -383,7 +385,7 @@ class MailIdentityIndex:
             connection.commit()
 
     def set_summarized(self, pipeline_id: str, summarized: bool = True) -> None:
-        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        now = now_rfc3339()
         with closing(self.connect()) as connection:
             cursor = connection.execute(
                 """
@@ -398,7 +400,7 @@ class MailIdentityIndex:
             connection.commit()
 
     def enqueue_event(self, *, account: str, rfc_message_id: str, folder: str, uidvalidity: int, uid: int, received_at: str | None = None, requeue: bool = False) -> bool:
-        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        now = now_rfc3339()
         rfc_message_id = normalize_rfc_message_id(rfc_message_id)
         with closing(self.connect()) as connection:
             if requeue:
@@ -423,8 +425,8 @@ class MailIdentityIndex:
         return cursor.rowcount == 1
 
     def claim_events(self, limit: int = 20, stale_seconds: int = 900) -> list[dict[str, Any]]:
-        now = dt.datetime.now(dt.timezone.utc)
-        stale = (now - dt.timedelta(seconds=stale_seconds)).isoformat()
+        current_time = program_now()
+        stale = (current_time - dt.timedelta(seconds=stale_seconds)).isoformat()
         with closing(self.connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
@@ -440,13 +442,13 @@ class MailIdentityIndex:
                 placeholders = ",".join("?" for _ in ids)
                 connection.execute(
                     f"UPDATE email_event_queue SET status='processing', attempts=attempts+1, claimed_at=?, last_error=NULL WHERE queue_id IN ({placeholders})",
-                    (now.isoformat(), *ids),
+                    (current_time.isoformat(), *ids),
                 )
             connection.commit()
         return [dict(row) for row in rows]
 
     def complete_events(self, queue_ids: list[int], pipeline_ids: dict[int, str]) -> None:
-        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        now = now_rfc3339()
         with closing(self.connect()) as connection:
             for queue_id in queue_ids:
                 connection.execute(

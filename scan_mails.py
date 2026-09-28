@@ -23,6 +23,7 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
 
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
 from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone, filename_timestamp, format_rfc3339, now_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import normalize_rfc_message_id  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 
@@ -32,23 +33,23 @@ LOGGER = __import__("logging").getLogger("email_pipeline.scanner")
 
 
 def utc_now() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    return now_rfc3339()
 
 
 def scan_log_filename(value: str) -> str:
-    timestamp = dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(dt.timezone.utc)
-    return f"scan-{timestamp.strftime('%Y%m%dT%H%M%S.%fZ')}.json"
+    timestamp = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return f"scan-{filename_timestamp(timestamp)}.json"
 
 
 def parse_utc(value: str) -> dt.datetime:
     parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
-        raise ValueError("time must include a UTC offset")
+        raise ValueError("time must include a timezone offset")
     return parsed.astimezone(dt.timezone.utc)
 
 
 def utc_text(value: dt.datetime) -> str:
-    return value.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+    return format_rfc3339(value)
 
 
 def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mailboxes: list[str] | None, limit: int) -> tuple[list[dict[str, Any]], list[dict[str, str]], int]:
@@ -77,11 +78,11 @@ def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mai
                     if internal is None:
                         continue
                     if internal.tzinfo is None:
-                        internal = internal.replace(tzinfo=dt.datetime.now().astimezone().tzinfo)
-                    received_utc = internal.astimezone(dt.timezone.utc)
-                    if not (start <= received_utc < end):
+                        internal = internal.replace(tzinfo=timezone())
+                    received_instant = internal.astimezone(dt.timezone.utc)
+                    if not (start <= received_instant < end):
                         continue
-                    folder_mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "received_at": utc_text(received_utc)})
+                    folder_mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "received_at": utc_text(received_instant)})
                 mails.extend(folder_mails[-limit:])
                 LOGGER.info("scan_folder_done folder=%s matched=%d", folder, len(folder_mails[-limit:]))
             except Exception as exc:
@@ -101,7 +102,8 @@ def main() -> int:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     args = parser.parse_args()
     config = yaml.safe_load(args.config.expanduser().resolve().read_text(encoding="utf-8")) or {}
-    boundary_timezone = str((config.get("day_boundary") or {}).get("timezone") or "UTC")
+    boundary_timezone = str((config.get("program") or {}).get("timezone") or "UTC")
+    configure_program_timezone(boundary_timezone)
     global LOGGER
     LOGGER = configure_daily_logger(args.output_root, "scanner", boundary_timezone)
     start = parse_utc(args.from_time)

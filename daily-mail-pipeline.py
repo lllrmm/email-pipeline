@@ -10,6 +10,7 @@ SCRIPT_DIR=Path(__file__).resolve().parent
 for candidate in (SCRIPT_DIR,SCRIPT_DIR/"src"):
     if str(candidate) not in sys.path: sys.path.insert(0,str(candidate))
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone  # noqa: E402
 DEFAULT_CONFIG=SCRIPT_DIR/"daily-mail-pipeline.yaml"
 DEFAULT_OUTPUT_ROOT=Path.home()/".hermes/email/daily"
 def run_stage(command:list[str])->dict[str,Any]:
@@ -29,7 +30,7 @@ def enqueue_scan_log(path:Path,config_path:Path)->dict[str,Any]:
 def main()->int:
     os.umask(0o077); p=argparse.ArgumentParser(); p.add_argument("--date"); p.add_argument("--from",dest="date_from"); p.add_argument("--to",dest="date_to"); p.add_argument("--from-time"); p.add_argument("--to-time"); p.add_argument("--mailbox",action="append"); p.add_argument("--limit-per-mailbox",type=int,default=200); p.add_argument("--config",type=Path,default=DEFAULT_CONFIG); p.add_argument("--output-root",type=Path,default=DEFAULT_OUTPUT_ROOT); p.add_argument("--scan-log",type=Path); a=p.parse_args(); config=a.config.expanduser().resolve()
     try:
-        cfg=yaml.safe_load(config.read_text(encoding="utf-8")) or {}; boundary=ZoneInfo(str((cfg.get("day_boundary") or {}).get("timezone") or "UTC"))
+        cfg=yaml.safe_load(config.read_text(encoding="utf-8")) or {}; boundary=ZoneInfo(str((cfg.get("program") or {}).get("timezone") or "UTC")); configure_program_timezone(str(boundary))
         if a.scan_log: paths=[a.scan_log.expanduser().resolve()]
         else:
             cmd=[sys.executable,str(SCRIPT_DIR/"scan_mails.py"),"--config",str(config),"--output-root",str(a.output_root.expanduser()),"--limit-per-mailbox",str(a.limit_per_mailbox)]
@@ -39,7 +40,7 @@ def main()->int:
             else:
                 first=dt.date.fromisoformat(a.date_from or a.date or dt.datetime.now(boundary).date().isoformat()); last=dt.date.fromisoformat(a.date_to or a.date or first.isoformat())
                 local_start=dt.datetime.combine(first,dt.time.min,tzinfo=boundary); local_end=dt.datetime.combine(last+dt.timedelta(days=1),dt.time.min,tzinfo=boundary)
-                from_time=local_start.astimezone(dt.timezone.utc).isoformat().replace("+00:00","Z"); to_time=local_end.astimezone(dt.timezone.utc).isoformat().replace("+00:00","Z")
+                from_time=local_start.isoformat(); to_time=local_end.isoformat()
             cmd.extend(["--from-time",from_time,"--to-time",to_time])
             for mailbox in a.mailbox or []: cmd.extend(["--mailbox",mailbox])
             result=run_stage(cmd); paths=[Path(item["scan_log_path"]) for item in result.get("per_day") or []] if result.get("mode")=="range" else [Path(result["scan_log_path"])]

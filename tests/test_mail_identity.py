@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 
 from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, make_pipeline_id
+from email_pipeline.program_time import configure_program_timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 SCAN_SPEC = importlib.util.spec_from_file_location("scan_mails", ROOT / "scan_mails.py")
@@ -20,10 +21,11 @@ INDEX_SPEC.loader.exec_module(INDEX_MAIL)
 
 
 class MailIdentityTests(unittest.TestCase):
-    def test_scan_log_filename_uses_generated_utc_time(self) -> None:
+    def test_scan_log_filename_uses_configured_timezone(self) -> None:
+        configure_program_timezone("Asia/Hong_Kong")
         filename = SCAN_MAILS.scan_log_filename("2026-09-28T10:04:35.098404Z")
 
-        self.assertEqual(filename, "scan-20260928T100435.098404Z.json")
+        self.assertEqual(filename, "scan-20260928T180435.098404+0800.json")
 
     def test_existing_database_is_migrated_with_metadata_table(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -168,6 +170,24 @@ class MailIdentityTests(unittest.TestCase):
             summarized = index.lookup_pipeline_id(pipeline_id)
             self.assertTrue(summarized["summarized"])
             self.assertIsNotNone(summarized["summarized_at"])
+
+    def test_claimed_queue_timestamp_uses_configured_timezone(self) -> None:
+        configure_program_timezone("Asia/Hong_Kong")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            index = MailIdentityIndex(Path(temp_dir) / "index.sqlite3")
+            index.enqueue_event(
+                account="outlook",
+                rfc_message_id="<queue@example.com>",
+                folder="Inbox",
+                uidvalidity=123,
+                uid=42,
+                received_at="2026-09-28T12:00:00+08:00",
+            )
+            claimed = index.claim_events(limit=1)
+            stored = index.list_queue_events()[0]
+
+            self.assertEqual(len(claimed), 1)
+            self.assertTrue(stored["claimed_at"].endswith("+08:00"))
 
 
 if __name__ == "__main__":

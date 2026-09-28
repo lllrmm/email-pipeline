@@ -22,6 +22,7 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
 
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
 from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, normalize_rfc_message_id  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 
@@ -70,8 +71,8 @@ def event_mails(client, changes: dict[str, tuple[int, int, int]]) -> list[dict]:
             rfc = normalize_rfc_message_id(str(header.get("Message-ID") or ""))
             value = fetched[int(uid)].get(b"INTERNALDATE")
             if value is not None and value.tzinfo is None:
-                value = value.replace(tzinfo=dt.datetime.now().astimezone().tzinfo)
-            received_at = value.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z") if value is not None else None
+                value = value.replace(tzinfo=timezone())
+            received_at = format_rfc3339(value) if value is not None else None
             mails.append({"rfc_message_id": rfc, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "received_at": received_at})
     return mails
 
@@ -81,7 +82,8 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    boundary_timezone = str((config.get("day_boundary") or {}).get("timezone") or "UTC")
+    boundary_timezone = str((config.get("program") or {}).get("timezone") or "UTC")
+    configure_program_timezone(boundary_timezone)
     global LOGGER
     LOGGER = configure_daily_logger(Path.home() / ".hermes" / "email" / "daily", "watcher", boundary_timezone)
     watch = config.get("watch") or {}

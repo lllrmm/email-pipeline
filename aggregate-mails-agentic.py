@@ -23,18 +23,18 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
 
 from email_pipeline.daily_schema import validate_daily_summary  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone, filename_timestamp, format_rfc3339, now_rfc3339  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
 
-def generated_at_utc() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+def generated_at() -> str:
+    return now_rfc3339()
 
 
 def aggregation_filename(generated_at: str) -> str:
     timestamp = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-    timestamp = timestamp.astimezone(dt.timezone.utc)
-    return f"aggregation-{timestamp.strftime('%Y%m%dT%H%M%S.%fZ')}.json"
+    return f"aggregation-{filename_timestamp(timestamp)}.json"
 
 
 def email_time_bounds(values: list[str]) -> tuple[str | None, str | None]:
@@ -46,12 +46,12 @@ def email_time_bounds(values: list[str]) -> tuple[str | None, str | None]:
             continue
         if timestamp.tzinfo is None:
             continue
-        parsed.append(timestamp.astimezone(dt.timezone.utc))
+        parsed.append(timestamp)
     if not parsed:
         return None, None
     return (
-        min(parsed).isoformat().replace("+00:00", "Z"),
-        max(parsed).isoformat().replace("+00:00", "Z"),
+        format_rfc3339(min(parsed)),
+        format_rfc3339(max(parsed)),
     )
 
 
@@ -68,7 +68,7 @@ def build_aggregation_artifact(
     return {
         "schema_version": 3,
         "artifact_type": "mail_daily_summary",
-        "generated_at": generated_at_utc(),
+        "generated_at": generated_at(),
         "included_pipeline_ids": list(pipeline_ids),
         "earliest_email_at": earliest_email_at,
         "latest_email_at": latest_email_at,
@@ -222,6 +222,9 @@ def main() -> int:
     workdir = args.agent_workdir.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
     config_path = args.config.expanduser().resolve()
+    cfg = load_config(config_path)
+    timezone_name = str((cfg.get("program") or {}).get("timezone") or "UTC")
+    configure_program_timezone(timezone_name)
     if not workdir.is_dir():
         raise RuntimeError(f"agent work directory does not exist: {workdir}")
     expected_output_dir = (workdir / "aggregation").resolve()
@@ -231,7 +234,6 @@ def main() -> int:
     pipeline_ids = list(dict.fromkeys(args.pipeline_id_list))
     sent_times = validate_pipeline_inputs(workdir, pipeline_ids)
     earliest_email_at, latest_email_at = email_time_bounds(sent_times)
-    cfg = load_config(config_path)
     oc = cfg.get("opencode") or {}
     executable = str(oc.get("executable") or (Path.home() / ".opencode" / "bin" / "opencode"))
     model = str(oc.get("model") or "deepseek/deepseek-flash")
@@ -255,6 +257,7 @@ def main() -> int:
     env["XDG_CACHE_HOME"] = str(runtime_cache)
     env["XDG_STATE_HOME"] = str(runtime_state)
     env["OPENCODE_CONFIG_DIR"] = str(runtime_config / "opencode")
+    env["EMAIL_PIPELINE_TIMEZONE"] = timezone_name
 
     run_dir = output_dir / "_run"
     run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
