@@ -74,6 +74,12 @@ class StageBoundaryTests(unittest.TestCase):
     def test_removed_intermediate_summary_script_stays_removed(self) -> None:
         self.assertFalse((ROOT / "summarize-mail.py").exists())
 
+    def test_event_watcher_runs_summarize_without_aggregation(self) -> None:
+        source = (ROOT / "watch_mails.py").read_text(encoding="utf-8")
+        self.assertIn('"--no-aggregation"', source)
+        self.assertNotIn("aggregate-mails-agentic.py", source)
+        self.assertIn("list_folders", source)
+
     def test_aggregation_does_not_materialize_pipeline_id_list(self) -> None:
         source = (ROOT / "aggregate-mails-agentic.py").read_text(encoding="utf-8")
 

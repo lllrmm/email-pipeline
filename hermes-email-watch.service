@@ -1,0 +1,14 @@
+[Unit]
+Description=Hermes IMAPClient new-mail watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.hermes/hermes-agent/venv/bin/python %h/.hermes/scripts/watch_mails.py
+Restart=always
+RestartSec=15
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

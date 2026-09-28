@@ -104,7 +104,8 @@ def run_agentic_summaries(
     pipeline_ids: list[str],
     pending_ids: list[str],
     reused_ids: list[str],
-) -> tuple[Path, int, int]:
+    aggregate: bool = True,
+) -> tuple[Path | None, int, int]:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     workers = max(1, int((config.get("opencode") or {}).get("concurrency") or 8))
     day_dir = scan_log_path.parent.parent
@@ -132,6 +133,8 @@ def run_agentic_summaries(
     completed_pipeline_ids = [pipeline_id for pipeline_id in completed_ids if pipeline_id]
     if len(completed_pipeline_ids) != len(pending_ids):
         raise RuntimeError("not every pending email summary completed")
+    if not aggregate:
+        return None, len(reused_ids), len(completed_pipeline_ids)
     aggregation_dir = day_dir / "aggregation"
     result = run_stage([
         sys.executable,
@@ -170,6 +173,7 @@ def main() -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--no-summary", action="store_true")
+    parser.add_argument("--no-aggregation", action="store_true")
     args = parser.parse_args()
 
     index_command = [
@@ -211,6 +215,7 @@ def main() -> int:
                     pipeline_ids,
                     pending_ids,
                     reused_ids,
+                    aggregate=not args.no_aggregation,
                 )
             daily_summary = load_daily_summary(scan_log, aggregation_path)
             messages_total = int(scan_log.get("messages_total") or 0)
