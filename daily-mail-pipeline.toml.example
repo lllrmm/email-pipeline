@@ -31,12 +31,16 @@ agent = "mail-daily-aggregator"
 timeout_seconds = 600
 runtime_root = "/home/daniel/.hermes/opencode-email-runtime"
 
+[scanner]
+concurrency = 1
+
 [imap]
 host = "outlook.office365.com"
 port = 993
 ssl = true
 username = "rlidf@connect.ust.hk"
 token_command = "/home/daniel/.hermes/email/outlook-token-refresh.sh"
+concurrency = 1
 
 [watcher]
 idle_accelerator_mailbox = "Inbox"
@@ -50,10 +54,6 @@ timezone = "Asia/Hong_Kong"
 account = "outlook"
 salt_path = "/home/daniel/.hermes/email/pipeline-id-salt"
 database_path = "/home/daniel/.hermes/email/mail-index.sqlite3"
-
-[concurrency]
-mailbox_scan = 1
-index = 4
 
 [throttle]
 scan_delay_seconds = 0.0
