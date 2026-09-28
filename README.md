@@ -39,6 +39,12 @@ Outlook envelope metadata
 OpenCode agent owns `mail_fetch`, `mail_unpack`, attachment extraction, and
 link inspection inside `emails/<pipeline_id>/`.
 
+Incremental execution is owned by `daily-mail-pipeline.py`, not by the
+single-email summarizer. The orchestrator reuses a valid `summary.json` whenever
+SQLite already has `summarized=true`; only unsummarized pipeline IDs invoke
+`summarize-mail-agentic.py`. Daily aggregation still includes every pipeline ID
+from the current scan, so later runs produce complete snapshots.
+
 ## OpenCode single-email agent chain
 
 `summarize-mail-agentic.py` provides a fully agent-driven path for one email. The entry

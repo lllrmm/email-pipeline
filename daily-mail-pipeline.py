@@ -15,6 +15,12 @@ from typing import Any
 import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
+from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+
 DEFAULT_CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes" / "email" / "daily"
 
@@ -36,13 +42,44 @@ def run_stage(command: list[str]) -> dict[str, Any]:
     return result
 
 
-def run_agentic_summaries(scan_log_path: Path, config_path: Path) -> Path:
+def partition_summary_work(day_dir: Path, pipeline_ids: list[str]) -> tuple[list[str], list[str]]:
+    pending: list[str] = []
+    reused: list[str] = []
+    for pipeline_id in pipeline_ids:
+        mail_dir = day_dir / "emails" / pipeline_id
+        request_path = mail_dir / "request.json"
+        if not request_path.is_file():
+            raise RuntimeError(f"request.json missing: {pipeline_id}")
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        if request.get("pipeline_id") != pipeline_id:
+            raise RuntimeError(f"request.json does not match pipeline id: {pipeline_id}")
+        database_path = request.get("index_database")
+        if not database_path:
+            raise RuntimeError(f"index database missing from request: {pipeline_id}")
+        identity = MailIdentityIndex(Path(database_path)).lookup_pipeline_id(pipeline_id)
+        if identity is None:
+            raise RuntimeError(f"pipeline id is absent from database: {pipeline_id}")
+        if identity.get("summarized") is not True:
+            pending.append(pipeline_id)
+            continue
+        summary_path = mail_dir / "summary.json"
+        if not summary_path.is_file():
+            raise RuntimeError(f"database says summarized but summary.json is missing: {pipeline_id}")
+        artifact = json.loads(summary_path.read_text(encoding="utf-8"))
+        if artifact.get("pipeline_id") != pipeline_id or not isinstance(artifact.get("analysis"), dict):
+            raise RuntimeError(f"database says summarized but summary.json is invalid: {pipeline_id}")
+        reused.append(pipeline_id)
+    return pending, reused
+
+
+def run_agentic_summaries(scan_log_path: Path, config_path: Path) -> tuple[Path, int, int]:
     scan_log = json.loads(scan_log_path.read_text(encoding="utf-8"))
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     workers = max(1, int((config.get("opencode") or {}).get("concurrency") or 8))
     pipeline_ids = list(scan_log.get("included_pipeline_ids") or [])
     day_dir = scan_log_path.parent.parent
-    completed_ids: list[str | None] = [None] * len(pipeline_ids)
+    pending_ids, reused_ids = partition_summary_work(day_dir, pipeline_ids)
+    completed_ids: list[str | None] = [None] * len(pending_ids)
 
     def job(position: int, pipeline_id: str) -> tuple[int, str]:
         workdir = (day_dir / "emails" / pipeline_id).resolve()
@@ -58,22 +95,24 @@ def run_agentic_summaries(scan_log_path: Path, config_path: Path) -> Path:
         return position, pipeline_id
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(job, position, pipeline_id) for position, pipeline_id in enumerate(pipeline_ids)]
+        futures = [pool.submit(job, position, pipeline_id) for position, pipeline_id in enumerate(pending_ids)]
         for future in as_completed(futures):
             position, pipeline_id = future.result()
             completed_ids[position] = pipeline_id
 
     completed_pipeline_ids = [pipeline_id for pipeline_id in completed_ids if pipeline_id]
+    if len(completed_pipeline_ids) != len(pending_ids):
+        raise RuntimeError("not every pending email summary completed")
     aggregation_dir = day_dir / "aggregation"
     result = run_stage([
         sys.executable,
         str(SCRIPT_DIR / "mails-aggregate-agentic.py"),
-        "--pipeline-id-list", *completed_pipeline_ids,
+        "--pipeline-id-list", *pipeline_ids,
         "--agent-workdir", str(day_dir),
         "--output-dir", str(aggregation_dir),
         "--config", str(config_path),
     ])
-    return Path(result["summary_path"])
+    return Path(result["summary_path"]), len(reused_ids), len(completed_pipeline_ids)
 
 
 def load_daily_summary(scan_log: dict[str, Any], aggregation_path: Path | None) -> dict[str, Any]:
@@ -130,8 +169,13 @@ def main() -> int:
         for scan_log_path in scan_log_paths:
             scan_log = json.loads(scan_log_path.read_text(encoding="utf-8"))
             aggregation_path: Path | None = None
+            summaries_reused = 0
+            summaries_created = 0
             if not args.no_summary:
-                aggregation_path = run_agentic_summaries(scan_log_path, args.config.expanduser().resolve())
+                aggregation_path, summaries_reused, summaries_created = run_agentic_summaries(
+                    scan_log_path,
+                    args.config.expanduser().resolve(),
+                )
             daily_summary = load_daily_summary(scan_log, aggregation_path)
             messages_total = int(scan_log.get("messages_total") or 0)
             total_messages += messages_total
@@ -142,6 +186,8 @@ def main() -> int:
                 "scan_generated_at": scan_log.get("generated_at"),
                 "mailboxes_total": scan_log.get("mailboxes_total"),
                 "mailboxes_failed": scan_log.get("mailboxes_failed") or [],
+                "summaries_reused": summaries_reused,
+                "summaries_created": summaries_created,
                 "messages_total": messages_total,
                 "daily_summary": daily_summary,
             })
@@ -156,6 +202,8 @@ def main() -> int:
             "scan_generated_at": item["scan_generated_at"],
             "mailboxes_total": item["mailboxes_total"],
             "mailboxes_failed": item["mailboxes_failed"],
+            "summaries_reused": item["summaries_reused"],
+            "summaries_created": item["summaries_created"],
             "messages_total": item["messages_total"],
             "daily_summary": item["daily_summary"],
         }, ensure_ascii=False, indent=2))
@@ -170,6 +218,8 @@ def main() -> int:
                     "scan_generated_at": item["scan_generated_at"],
                     "mailboxes_total": item["mailboxes_total"],
                     "mailboxes_failed": item["mailboxes_failed"],
+                    "summaries_reused": item["summaries_reused"],
+                    "summaries_created": item["summaries_created"],
                     "messages_total": item["messages_total"],
                     "daily_summary": item["daily_summary"],
                 }

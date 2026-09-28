@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from email_pipeline.mail_identity import MailIdentityIndex
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,6 +34,15 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('"--mail-dir"', source)
         self.assertIn('"--output"', source)
         self.assertIn('get("concurrency") or 8', source)
+
+    def test_incremental_skip_logic_belongs_to_orchestrator(self) -> None:
+        orchestrator = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
+        summarizer = (ROOT / "summarize-mail-agentic.py").read_text(encoding="utf-8")
+
+        self.assertIn("partition_summary_work", orchestrator)
+        self.assertIn('identity.get("summarized") is not True', orchestrator)
+        self.assertNotIn("partition_summary_work", summarizer)
+        self.assertNotIn('identity.get("summarized")', summarizer)
 
     def test_agentic_output_path_is_caller_selected_inside_workspace(self) -> None:
         source = (ROOT / "summarize-mail-agentic.py").read_text(encoding="utf-8")
@@ -103,6 +114,66 @@ class StageBoundaryTests(unittest.TestCase):
             daily_summary = orchestrator.load_daily_summary(scan_log, aggregation_path)
 
             self.assertEqual(daily_summary["overview"], "Test summary")
+
+    def test_orchestrator_reuses_database_summarized_messages(self) -> None:
+        orchestrator = load_script("daily_orchestrator_incremental", ROOT / "daily-mail-pipeline.py")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            day_dir = Path(temp_dir) / "2026-09-28"
+            pipeline_id = "a" * 64
+            mail_dir = day_dir / "emails" / pipeline_id
+            mail_dir.mkdir(parents=True)
+            database = Path(temp_dir) / "mail-index.sqlite3"
+            index = MailIdentityIndex(database)
+            index.record(
+                pipeline_id=pipeline_id,
+                rfc_message_id="<incremental@example.com>",
+                identity_source="rfc_message_id",
+                account="outlook",
+                folder="Inbox",
+                himalaya_id="42",
+                observed_date="2026-09-28",
+            )
+            (mail_dir / "request.json").write_text(json.dumps({
+                "pipeline_id": pipeline_id,
+                "index_database": str(database),
+            }), encoding="utf-8")
+            (mail_dir / "summary.json").write_text(json.dumps({
+                "pipeline_id": pipeline_id,
+                "analysis": {"summary": "done"},
+            }), encoding="utf-8")
+            index.set_summarized(pipeline_id)
+
+            pending, reused = orchestrator.partition_summary_work(day_dir, [pipeline_id])
+
+            self.assertEqual(pending, [])
+            self.assertEqual(reused, [pipeline_id])
+
+    def test_summarized_database_state_requires_summary_artifact(self) -> None:
+        orchestrator = load_script("daily_orchestrator_consistency", ROOT / "daily-mail-pipeline.py")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            day_dir = Path(temp_dir) / "2026-09-28"
+            pipeline_id = "b" * 64
+            mail_dir = day_dir / "emails" / pipeline_id
+            mail_dir.mkdir(parents=True)
+            database = Path(temp_dir) / "mail-index.sqlite3"
+            index = MailIdentityIndex(database)
+            index.record(
+                pipeline_id=pipeline_id,
+                rfc_message_id="<missing@example.com>",
+                identity_source="rfc_message_id",
+                account="outlook",
+                folder="Inbox",
+                himalaya_id="43",
+                observed_date="2026-09-28",
+            )
+            (mail_dir / "request.json").write_text(json.dumps({
+                "pipeline_id": pipeline_id,
+                "index_database": str(database),
+            }), encoding="utf-8")
+            index.set_summarized(pipeline_id)
+
+            with self.assertRaisesRegex(RuntimeError, "summary.json is missing"):
+                orchestrator.partition_summary_work(day_dir, [pipeline_id])
 
 
 if __name__ == "__main__":
