@@ -63,6 +63,22 @@ class OpenCodeMailChainTests(unittest.TestCase):
         self.assertEqual(tools, ["mail_fetch", "mail_unpack"])
         self.assertEqual(result["summary"], "done")
 
+    def test_daily_validator_returns_errors_without_modifying(self) -> None:
+        candidate = {
+            "date": "2026-09-25",
+            "overview": "overview",
+            "events": [],
+            "warnings": [],
+            "messages_total": 1,
+            "messages_requiring_review": 0,
+        }
+        valid = agent_tools.command_validate_daily_summary(json.dumps(candidate))
+        invalid = agent_tools.command_validate_daily_summary(json.dumps({**candidate, "deadlines": []}))
+
+        self.assertTrue(valid["valid"])
+        self.assertFalse(invalid["valid"])
+        self.assertIn("daily summary keys", invalid["errors"][0])
+
 
 if __name__ == "__main__":
     unittest.main()

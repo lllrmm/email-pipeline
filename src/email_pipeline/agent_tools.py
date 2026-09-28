@@ -23,6 +23,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 
 from .mime_extract import extract_attachment_text, normalize_space, secure_write_bytes, secure_write_text
+from .daily_schema import validation_result
 
 
 MAX_LINK_BYTES = 2 * 1024 * 1024
@@ -323,13 +324,27 @@ def command_inspect_link(workspace: Path, link_id: str) -> dict[str, Any]:
     }
 
 
+def command_validate_daily_summary(summary_json: str) -> dict[str, Any]:
+    try:
+        value = json.loads(summary_json)
+    except json.JSONDecodeError as exc:
+        return {"valid": False, "errors": [f"invalid JSON: {exc}"]}
+    return validation_result(value)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["fetch", "unpack", "extract-attachment", "extract-links", "inspect-link"])
+    parser.add_argument("command", choices=["fetch", "unpack", "extract-attachment", "extract-links", "inspect-link", "validate-daily-summary"])
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--id")
+    parser.add_argument("--json")
     args = parser.parse_args()
-    workspace = workspace_path(args.workspace)
+    if args.command == "validate-daily-summary":
+        workspace = Path(args.workspace).expanduser().resolve()
+        if not workspace.is_dir():
+            raise RuntimeError("workspace directory does not exist")
+    else:
+        workspace = workspace_path(args.workspace)
     if args.command == "fetch":
         result = command_fetch(workspace)
     elif args.command == "unpack":
@@ -338,8 +353,10 @@ def main() -> int:
         result = command_extract_attachment(workspace, str(args.id or ""))
     elif args.command == "extract-links":
         result = command_extract_links(workspace, str(args.id or ""))
-    else:
+    elif args.command == "inspect-link":
         result = command_inspect_link(workspace, str(args.id or ""))
+    else:
+        result = command_validate_daily_summary(str(args.json or ""))
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

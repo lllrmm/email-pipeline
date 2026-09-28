@@ -49,7 +49,7 @@ class DailyAggregationTests(unittest.TestCase):
             "messages_total": 1,
             "messages_requiring_review": 0,
         }
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(ValueError):
             MODULE.validate_daily_summary(invalid)
 
 

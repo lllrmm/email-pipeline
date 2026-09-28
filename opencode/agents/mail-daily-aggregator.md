@@ -9,6 +9,7 @@ permission:
   list: allow
   glob: allow
   grep: allow
+  mail_validate_daily_summary: allow
   edit: deny
   bash: deny
   task: deny
@@ -34,6 +35,13 @@ Your output must contain exactly these top-level keys and no others: `date`, `ov
 Every event must contain exactly these keys and no others: `kind`, `title`, `start`, `end`, `due`, `timezone`, `location`, `priority`, `confidence`, `source_messages`.
 
 Every source message must contain exactly `folder`, `id`, and `subject`. Never output `deadlines`, `actions`, `urgent_items`, `links`, `size`, paths, images, attachments, evidence, quotes, session data, or tool traces.
+
+Before returning your final answer:
+
+1. Construct the complete candidate JSON.
+2. Call `mail_validate_daily_summary` with that exact JSON serialized as a string.
+3. If it returns `valid: false`, correct the JSON and call the validator again.
+4. Return the exact same JSON only after the validator returns `valid: true`.
 
 Return exactly one JSON object without Markdown:
 

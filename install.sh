@@ -25,6 +25,7 @@ install -m 700 "$repo_dir/opencode-daily-summary.py" "$script_dir/opencode-daily
 install -d -m 700 "$package_dir"
 install -m 600 "$repo_dir/src/email_pipeline/__init__.py" "$package_dir/__init__.py"
 install -m 600 "$repo_dir/src/email_pipeline/mime_extract.py" "$package_dir/mime_extract.py"
+install -m 600 "$repo_dir/src/email_pipeline/daily_schema.py" "$package_dir/daily_schema.py"
 install -d -m 700 "$opencode_agent_dir"
 install -m 600 "$repo_dir/opencode/agents/mail-analyzer.md" "$opencode_agent_dir/mail-analyzer.md"
 install -m 600 "$repo_dir/opencode/agents/mail-daily-aggregator.md" "$opencode_agent_dir/mail-daily-aggregator.md"
@@ -34,6 +35,7 @@ install -m 600 "$repo_dir/opencode/tools/mail_unpack.ts" "$opencode_tool_dir/mai
 install -m 600 "$repo_dir/opencode/tools/mail_extract_attachment.ts" "$opencode_tool_dir/mail_extract_attachment.ts"
 install -m 600 "$repo_dir/opencode/tools/mail_extract_links.ts" "$opencode_tool_dir/mail_extract_links.ts"
 install -m 600 "$repo_dir/opencode/tools/mail_inspect_link.ts" "$opencode_tool_dir/mail_inspect_link.ts"
+install -m 600 "$repo_dir/opencode/tools/mail_validate_daily_summary.ts" "$opencode_tool_dir/mail_validate_daily_summary.ts"
 install -d -m 700 "$opencode_email_config_dir/agents" "$opencode_email_config_dir/tools"
 install -m 600 "$repo_dir/opencode/agents/mail-analyzer.md" "$opencode_email_config_dir/agents/mail-analyzer.md"
 install -m 600 "$repo_dir/opencode/agents/mail-daily-aggregator.md" "$opencode_email_config_dir/agents/mail-daily-aggregator.md"
@@ -42,6 +44,7 @@ install -m 600 "$repo_dir/opencode/tools/mail_unpack.ts" "$opencode_email_config
 install -m 600 "$repo_dir/opencode/tools/mail_extract_attachment.ts" "$opencode_email_config_dir/tools/mail_extract_attachment.ts"
 install -m 600 "$repo_dir/opencode/tools/mail_extract_links.ts" "$opencode_email_config_dir/tools/mail_extract_links.ts"
 install -m 600 "$repo_dir/opencode/tools/mail_inspect_link.ts" "$opencode_email_config_dir/tools/mail_inspect_link.ts"
+install -m 600 "$repo_dir/opencode/tools/mail_validate_daily_summary.ts" "$opencode_email_config_dir/tools/mail_validate_daily_summary.ts"
 install -m 700 "$repo_dir/mail-agent-tools.py" "$script_dir/mail-agent-tools.py"
 install -m 600 "$repo_dir/src/email_pipeline/agent_tools.py" "$package_dir/agent_tools.py"
 
@@ -54,7 +57,8 @@ python3 -m py_compile \
   "$script_dir/mail-agent-tools.py" \
   "$package_dir/__init__.py" \
   "$package_dir/mime_extract.py" \
-  "$package_dir/agent_tools.py"
+  "$package_dir/agent_tools.py" \
+  "$package_dir/daily_schema.py"
 
 printf 'Installed read-only mail pipeline to %s\n' "$target"
 printf 'Existing YAML configuration was not modified.\n'

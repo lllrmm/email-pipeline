@@ -14,6 +14,12 @@ from typing import Any
 import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
+from email_pipeline.daily_schema import validate_daily_summary  # noqa: E402
+
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 
 
@@ -51,8 +57,9 @@ def walk(value: Any):
             yield from walk(child)
 
 
-def parse_events(stdout: str) -> tuple[str | None, dict[str, Any] | None]:
+def parse_events(stdout: str) -> tuple[str | None, list[str], dict[str, Any] | None]:
     session_id = None
+    tools: list[str] = []
     candidates: list[str] = []
     for line in stdout.splitlines():
         try:
@@ -63,6 +70,10 @@ def parse_events(stdout: str) -> tuple[str | None, dict[str, Any] | None]:
             for key in ("sessionID", "sessionId", "session_id"):
                 if isinstance(item.get(key), str):
                     session_id = item[key]
+            tool_name = item.get("tool") or item.get("toolName") or item.get("name")
+            item_type = str(item.get("type") or "").lower()
+            if isinstance(tool_name, str) and "tool" in item_type and tool_name.startswith("mail_"):
+                tools.append(tool_name)
             if isinstance(item.get("text"), str):
                 candidates.append(item["text"])
     for text in reversed(candidates):
@@ -72,40 +83,8 @@ def parse_events(stdout: str) -> tuple[str | None, dict[str, Any] | None]:
         except json.JSONDecodeError:
             continue
         if isinstance(result, dict) and "overview" in result:
-            return session_id, result
-    return session_id, None
-
-
-DAILY_KEYS = {
-    "date", "overview", "events", "warnings",
-    "messages_total", "messages_requiring_review",
-}
-EVENT_KEYS = {
-    "kind", "title", "start", "end", "due", "timezone", "location",
-    "priority", "confidence", "source_messages",
-}
-SOURCE_KEYS = {"folder", "id", "subject"}
-
-
-def validate_daily_summary(value: dict[str, Any]) -> None:
-    if set(value) != DAILY_KEYS:
-        raise RuntimeError(f"daily summary keys do not match schema: {sorted(value)}")
-    if not isinstance(value.get("overview"), str):
-        raise RuntimeError("overview must be a string")
-    if not isinstance(value.get("events"), list) or not isinstance(value.get("warnings"), list):
-        raise RuntimeError("events and warnings must be arrays")
-    if not isinstance(value.get("messages_total"), int) or not isinstance(value.get("messages_requiring_review"), int):
-        raise RuntimeError("message counts must be integers")
-    for event in value["events"]:
-        if not isinstance(event, dict) or set(event) != EVENT_KEYS:
-            raise RuntimeError("event keys do not match schema")
-        if event.get("kind") not in {"scheduled", "deadline", "action"}:
-            raise RuntimeError(f"invalid event kind: {event.get('kind')}")
-        if not isinstance(event.get("source_messages"), list):
-            raise RuntimeError("source_messages must be an array")
-        for source in event["source_messages"]:
-            if not isinstance(source, dict) or set(source) != SOURCE_KEYS:
-                raise RuntimeError("source message keys do not match schema")
+            return session_id, list(dict.fromkeys(tools)), result
+    return session_id, list(dict.fromkeys(tools)), None
 
 
 def main() -> int:
@@ -154,7 +133,7 @@ def main() -> int:
         command, stdin=subprocess.DEVNULL, text=True, capture_output=True,
         timeout=timeout, env=env, check=False,
     )
-    session_id, result = parse_events(completed.stdout)
+    session_id, tools_used, result = parse_events(completed.stdout)
     if completed.returncode != 0 or result is None:
         raise RuntimeError(f"daily aggregation failed: {completed.stderr[-1000:]} {completed.stdout[-1000:]}")
     validate_daily_summary(result)
@@ -165,6 +144,7 @@ def main() -> int:
             "processor": "opencode",
             "session_id": session_id,
             "model": model,
+            "tools_used": tools_used,
         },
         "daily_summary": result,
     }
