@@ -15,7 +15,13 @@ opencode:
   timeout_seconds: 600
   concurrency: 8
   runtime_root: "/home/daniel/.hermes/opencode-email-runtime"
-  himalaya_config: "/home/daniel/.config/himalaya/config.toml"
+
+imap:
+  host: "outlook.office365.com"
+  port: 993
+  ssl: true
+  username: "rlidf@connect.ust.hk"
+  token_command: "/home/daniel/.hermes/email/outlook-token-refresh.sh"
 
 scan:
   timezone: "Asia/Hong_Kong"
@@ -34,7 +40,7 @@ throttle:
   scan_delay_seconds: 0.0
   read_delay_seconds: 0.0
 
-himalaya_retry:
+imap_retry:
   waits: [20, 60]
 
 extraction:

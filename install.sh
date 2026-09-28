@@ -11,6 +11,7 @@ opencode_tool_dir="$HOME/.config/opencode/tools"
 opencode_email_config_dir="$hermes_home/opencode-email-runtime/config/opencode"
 
 install -d -m 700 "$script_dir"
+python3 -m pip install --user 'IMAPClient>=3.0,<4'
 
 install -m 700 "$repo_dir/daily-mail-pipeline.py" "$target"
 install -m 700 "$repo_dir/scan_mails.py" "$script_dir/scan_mails.py"
@@ -29,6 +30,7 @@ install -m 600 "$repo_dir/src/email_pipeline/__init__.py" "$package_dir/__init__
 install -m 600 "$repo_dir/src/email_pipeline/mime_extract.py" "$package_dir/mime_extract.py"
 install -m 600 "$repo_dir/src/email_pipeline/daily_schema.py" "$package_dir/daily_schema.py"
 install -m 600 "$repo_dir/src/email_pipeline/mail_identity.py" "$package_dir/mail_identity.py"
+install -m 600 "$repo_dir/src/email_pipeline/imap_backend.py" "$package_dir/imap_backend.py"
 install -d -m 700 "$opencode_agent_dir"
 install -m 600 "$repo_dir/opencode/agents/mail-analyzer.md" "$opencode_agent_dir/mail-analyzer.md"
 install -m 600 "$repo_dir/opencode/agents/mail-daily-aggregator.md" "$opencode_agent_dir/mail-daily-aggregator.md"
@@ -63,7 +65,8 @@ python3 -m py_compile \
   "$package_dir/mime_extract.py" \
   "$package_dir/agent_tools.py" \
   "$package_dir/daily_schema.py" \
-  "$package_dir/mail_identity.py"
+  "$package_dir/mail_identity.py" \
+  "$package_dir/imap_backend.py"
 
 printf 'Installed read-only mail pipeline to %s\n' "$target"
 printf 'Existing YAML configuration was not modified.\n'

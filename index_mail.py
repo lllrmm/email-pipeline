@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Register one RFC Message-ID and its Himalaya transport location."""
+"""Register one RFC Message-ID and its IMAP UID transport location."""
 
 from __future__ import annotations
 
@@ -24,7 +24,8 @@ DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 def register_mail(
     rfc_message_id: str,
     folder: str,
-    himalaya_id: str,
+    uidvalidity: int,
+    uid: int,
     *,
     account: str = "outlook",
     salt: bytes,
@@ -32,24 +33,22 @@ def register_mail(
 ) -> dict[str, str]:
     rfc_message_id = rfc_message_id.strip()
     folder = folder.strip()
-    himalaya_id = himalaya_id.strip()
     if not rfc_message_id:
         raise RuntimeError("RFC Message-ID is required")
     if not folder:
         raise RuntimeError("folder is required")
-    if not himalaya_id:
-        raise RuntimeError("Himalaya ID is required")
     pipeline_id = make_pipeline_id(salt, rfc_message_id)
     index = MailIdentityIndex(database_path)
     created = index.register_identity(
         pipeline_id=pipeline_id,
         rfc_message_id=rfc_message_id,
     )
-    index.record_location(
+    index.record_imap_location(
         pipeline_id=pipeline_id,
         account=account,
         folder=folder,
-        himalaya_id=himalaya_id,
+        uidvalidity=uidvalidity,
+        uid=uid,
         observed_date=None,
     )
     return {
@@ -60,10 +59,11 @@ def register_mail(
 
 def main() -> int:
     os.umask(0o077)
-    parser = argparse.ArgumentParser(description="Register one RFC Message-ID and Himalaya location.")
+    parser = argparse.ArgumentParser(description="Register one RFC Message-ID and IMAP UID location.")
     parser.add_argument("--rfc-message-id", required=True)
     parser.add_argument("--folder", required=True)
-    parser.add_argument("--himalaya-id", required=True)
+    parser.add_argument("--uidvalidity", required=True, type=int)
+    parser.add_argument("--uid", required=True, type=int)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args()
 
@@ -74,7 +74,8 @@ def main() -> int:
     result = register_mail(
         args.rfc_message_id,
         args.folder,
-        args.himalaya_id,
+        args.uidvalidity,
+        args.uid,
         account=str(identity.get("account") or "outlook"),
         salt=get_or_create_salt(salt_path),
         database_path=database_path,

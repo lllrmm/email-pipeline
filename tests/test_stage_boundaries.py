@@ -52,9 +52,10 @@ class StageBoundaryTests(unittest.TestCase):
 
         self.assertIn('parser.add_argument("--rfc-message-id"', indexer)
         self.assertIn('parser.add_argument("--folder"', indexer)
-        self.assertIn('parser.add_argument("--himalaya-id"', indexer)
+        self.assertIn('parser.add_argument("--uidvalidity"', indexer)
+        self.assertIn('parser.add_argument("--uid"', indexer)
         self.assertNotIn('parser.add_argument("--envelope-json"', indexer)
-        self.assertIn("record_location", indexer)
+        self.assertIn("record_imap_location", indexer)
         self.assertNotIn("record_workspace", indexer)
         self.assertNotIn("update_metadata", indexer)
 

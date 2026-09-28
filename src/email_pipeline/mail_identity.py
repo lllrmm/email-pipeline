@@ -125,6 +125,11 @@ class MailIdentityIndex:
                 connection.execute("ALTER TABLE email_identity ADD COLUMN summarized INTEGER NOT NULL DEFAULT 0")
             if "summarized_at" not in columns:
                 connection.execute("ALTER TABLE email_identity ADD COLUMN summarized_at TEXT")
+            location_columns = {row["name"] for row in connection.execute("PRAGMA table_info(email_location)").fetchall()}
+            if "uidvalidity" not in location_columns:
+                connection.execute("ALTER TABLE email_location ADD COLUMN uidvalidity INTEGER")
+            if "imap_uid" not in location_columns:
+                connection.execute("ALTER TABLE email_location ADD COLUMN imap_uid INTEGER")
             connection.commit()
         self.path.chmod(0o600)
 
@@ -225,6 +230,18 @@ class MailIdentityIndex:
                     last_seen=excluded.last_seen
                 """,
                 (account, folder, himalaya_id, pipeline_id, observed_date, now),
+            )
+            connection.commit()
+
+    def record_imap_location(self, *, pipeline_id: str, account: str, folder: str, uidvalidity: int, uid: int, observed_date: str | None) -> None:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        legacy_id = f"{uidvalidity}:{uid}"
+        with closing(self.connect()) as connection:
+            connection.execute(
+                """INSERT INTO email_location (account, folder, himalaya_id, pipeline_id, observed_date, last_seen, uidvalidity, imap_uid)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(account, folder, himalaya_id) DO UPDATE SET pipeline_id=excluded.pipeline_id, observed_date=excluded.observed_date, last_seen=excluded.last_seen, uidvalidity=excluded.uidvalidity, imap_uid=excluded.imap_uid""",
+                (account, folder, legacy_id, pipeline_id, observed_date, now, int(uidvalidity), int(uid)),
             )
             connection.commit()
 
@@ -369,7 +386,7 @@ class MailIdentityIndex:
                 return None
             locations = connection.execute(
                 """
-                SELECT account, folder, himalaya_id, observed_date, last_seen
+                SELECT account, folder, uidvalidity, imap_uid, observed_date, last_seen
                 FROM email_location WHERE pipeline_id=? ORDER BY last_seen DESC
                 """,
                 (value,),

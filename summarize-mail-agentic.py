@@ -195,12 +195,6 @@ def main() -> int:
     env = dict(os.environ)
     env["DEEPSEEK_API_KEY"] = resolve_email_key(cfg)
     env["HERMES_HOME"] = str(Path.home() / ".hermes")
-    env["HIMALAYA_CONFIG"] = str(
-        Path(
-            opencode_cfg.get("himalaya_config")
-            or (Path.home() / ".config" / "himalaya" / "config.toml")
-        ).expanduser().resolve()
-    )
     env["PATH"] = os.pathsep.join([
         str(Path.home() / ".local" / "bin"),
         str(Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin"),

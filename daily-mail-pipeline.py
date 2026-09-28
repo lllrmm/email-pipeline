@@ -56,13 +56,15 @@ def prepare_scanned_mails(scan_log_path: Path, config_path: Path) -> tuple[list[
     for mail in mails:
         rfc_message_id = str(mail.get("rfc_message_id") or "").strip()
         folder = str(mail.get("folder") or "").strip()
-        himalaya_id = str(mail.get("himalaya_id") or "").strip()
+        uidvalidity = str(mail.get("uidvalidity") or "").strip()
+        uid = str(mail.get("uid") or "").strip()
         result = run_stage([
             sys.executable,
             str(SCRIPT_DIR / "index_mail.py"),
             "--rfc-message-id", rfc_message_id,
             "--folder", folder,
-            "--himalaya-id", himalaya_id,
+            "--uidvalidity", uidvalidity,
+            "--uid", uid,
             "--config", str(config_path),
         ])
         pipeline_id = str(result["pipeline_id"])

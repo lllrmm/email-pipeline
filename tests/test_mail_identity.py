@@ -77,7 +77,8 @@ class MailIdentityTests(unittest.TestCase):
                 INDEX_MAIL.register_mail(
                     "",
                     "Inbox",
-                    "42",
+                    123,
+                    42,
                     salt=b"x" * 32,
                     database_path=root / "index.sqlite3",
                 )
@@ -89,14 +90,16 @@ class MailIdentityTests(unittest.TestCase):
             first = INDEX_MAIL.register_mail(
                 "<registered@example.com>",
                 "Inbox",
-                "42",
+                123,
+                42,
                 salt=b"x" * 32,
                 database_path=database,
             )
             second = INDEX_MAIL.register_mail(
                 "<registered@example.com>",
                 "Inbox",
-                "42",
+                123,
+                42,
                 salt=b"x" * 32,
                 database_path=database,
             )
@@ -132,13 +135,22 @@ class MailIdentityTests(unittest.TestCase):
                 subject="Initial subject",
                 sender="Sender <sender@example.com>",
             )
+            index.record_imap_location(
+                pipeline_id=pipeline_id,
+                account="outlook",
+                folder="Inbox",
+                uidvalidity=123,
+                uid=42,
+                observed_date="2026-09-28",
+            )
             workspace = root / "2026-09-28" / "emails" / pipeline_id
             index.record_workspace(pipeline_id, "2026-09-28", workspace)
             by_pipeline = index.lookup_pipeline_id(pipeline_id)
             by_rfc = index.lookup_rfc_message_id("<message@example.com>")
 
             self.assertEqual(by_pipeline["rfc_message_id"], "<message@example.com>")
-            self.assertEqual(by_pipeline["locations"][0]["himalaya_id"], "42")
+            self.assertEqual(by_pipeline["locations"][0]["imap_uid"], 42)
+            self.assertEqual(by_pipeline["locations"][0]["uidvalidity"], 123)
             self.assertEqual(by_pipeline["workspaces"][0]["path"], str(workspace))
             self.assertFalse(by_pipeline["summarized"])
             self.assertEqual(by_pipeline["metadata"]["subject"], "Initial subject")

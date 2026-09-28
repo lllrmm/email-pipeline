@@ -1,6 +1,6 @@
 # Email Pipeline
 
-Read-only Outlook email extraction and digest pipeline for Hermes Agent.
+Read-only Outlook IMAPClient email extraction and digest pipeline for Hermes Agent.
 
 ## What it fixes
 

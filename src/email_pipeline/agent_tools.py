@@ -22,10 +22,12 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import requests
+import yaml
 
 from .mime_extract import extract_attachment_text, normalize_space, secure_write_bytes, secure_write_text
 from .daily_schema import validation_result
 from .mail_identity import MailIdentityIndex
+from .imap_backend import fetch_raw
 
 
 MAX_LINK_BYTES = 2 * 1024 * 1024
@@ -121,29 +123,32 @@ def command_fetch(workspace: Path) -> dict[str, Any]:
     last_error = ""
     for location in identity["locations"]:
         folder = str(location.get("folder") or "").strip()
-        message_id = str(location.get("himalaya_id") or "").strip()
-        if not folder or not message_id:
+        uidvalidity = location.get("uidvalidity")
+        uid = location.get("imap_uid")
+        if not folder or uidvalidity is None or uid is None:
             continue
-        command = ["himalaya", "message", "read", "--raw", "-m", folder, message_id]
         for attempt in range(3):
-            completed = subprocess.run(command, capture_output=True, timeout=90, check=False)
-            if completed.returncode == 0:
-                secure_write_bytes(eml_path, completed.stdout)
-                digest = hashlib.sha256(completed.stdout).hexdigest()
+            try:
+                config_path = Path.home() / ".hermes" / "scripts" / "daily-mail-pipeline.yaml"
+                config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                data = fetch_raw(config, folder, int(uidvalidity), int(uid))
+                secure_write_bytes(eml_path, data)
+                digest = hashlib.sha256(data).hexdigest()
                 index.set_eml_sha256(pipeline_id, digest)
-                persist_message_metadata(index, pipeline_id, completed.stdout)
+                persist_message_metadata(index, pipeline_id, data)
                 return {
                     "status": "fetched",
                     "pipeline_id": pipeline_id,
                     "path": "message.eml",
-                    "size": len(completed.stdout),
+                    "size": len(data),
                     "sha256": digest,
                 }
-            last_error = (completed.stderr or completed.stdout).decode("utf-8", errors="replace")[:500]
+            except Exception as exc:
+                last_error = str(exc)[:500]
             if attempt < 2:
                 import time
                 time.sleep((attempt + 1) * 5)
-    raise RuntimeError(f"himalaya read failed: {last_error}")
+    raise RuntimeError(f"IMAP fetch failed: {last_error}")
 
 
 def command_unpack(workspace: Path) -> dict[str, Any]:
