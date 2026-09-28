@@ -139,6 +139,9 @@ def main() -> int:
                 "date": scan_log.get("date"),
                 "scan_log_path": str(scan_log_path),
                 "aggregation_path": str(aggregation_path) if aggregation_path else None,
+                "scan_generated_at": scan_log.get("generated_at"),
+                "mailboxes_total": scan_log.get("mailboxes_total"),
+                "mailboxes_failed": scan_log.get("mailboxes_failed") or [],
                 "messages_total": messages_total,
                 "daily_summary": daily_summary,
             })
@@ -150,6 +153,9 @@ def main() -> int:
         item = per_day[0]
         print(json.dumps({
             "ok": True,
+            "scan_generated_at": item["scan_generated_at"],
+            "mailboxes_total": item["mailboxes_total"],
+            "mailboxes_failed": item["mailboxes_failed"],
             "messages_total": item["messages_total"],
             "daily_summary": item["daily_summary"],
         }, ensure_ascii=False, indent=2))
@@ -161,6 +167,9 @@ def main() -> int:
             "per_day": [
                 {
                     "date": item["date"],
+                    "scan_generated_at": item["scan_generated_at"],
+                    "mailboxes_total": item["mailboxes_total"],
+                    "mailboxes_failed": item["mailboxes_failed"],
                     "messages_total": item["messages_total"],
                     "daily_summary": item["daily_summary"],
                 }
