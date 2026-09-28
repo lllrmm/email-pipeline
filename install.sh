@@ -6,14 +6,14 @@ code_root=${EMAIL_PIPELINE_CODE_ROOT:-"$HOME/email-pipeline-code"}
 config_root=${EMAIL_PIPELINE_CONFIG_ROOT:-"$HOME/.email-pipeline"}
 data_root=${EMAIL_PIPELINE_DATA_ROOT:-"$HOME/email-pipeline"}
 package_dir="$code_root/email_pipeline"
-runtime_python=${EMAIL_PIPELINE_PYTHON:-"$code_root/.venv/bin/python"}
+runtime_python=${EMAIL_PIPELINE_PYTHON:-python3}
+vendor_dir="$code_root/vendor"
 service_dir="$HOME/.config/systemd/user"
-if [[ ! -x "$runtime_python" ]]; then
-  python3 -m venv "$code_root/.venv"
-fi
-
 install -d -m 700 "$code_root" "$config_root" "$data_root" "$service_dir"
-"$runtime_python" -m pip install -q 'IMAPClient>=3.0,<4' 'requests>=2.31'
+if ! PYTHONPATH="$vendor_dir" "$runtime_python" -c 'import imapclient, requests' 2>/dev/null; then
+  install -d -m 700 "$vendor_dir"
+  "$runtime_python" -m pip install -q --target "$vendor_dir" 'IMAPClient>=3.0,<4' 'requests>=2.31'
+fi
 
 rm -rf "$package_dir"
 cp -R "$repo_dir/src/email_pipeline" "$package_dir"
@@ -37,5 +37,5 @@ for dir in "$HOME/.config/opencode" "$data_root/opencode-runtime/config/opencode
 done
 
 rm -rf "$code_root/__pycache__"
-"$runtime_python" -m compileall -q "$package_dir" "$code_root/email-pipeline.py"
+PYTHONPATH="$vendor_dir" "$runtime_python" -m compileall -q "$package_dir" "$code_root/email-pipeline.py"
 printf 'Installed code=%s config=%s data=%s\n' "$code_root" "$config_root" "$data_root"
