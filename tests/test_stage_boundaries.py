@@ -34,6 +34,7 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('"scanner"', scanner)
         self.assertIn("configure_daily_logger", watcher)
         self.assertIn('"watcher"', watcher)
+        self.assertIn("from zoneinfo import ZoneInfo", scanner)
 
     def test_scan_orchestrator_only_enqueues(self) -> None:
         source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
