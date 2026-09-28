@@ -16,8 +16,6 @@ agent = "mail-analyzer"
 timeout_seconds = 600
 runtime_root = "/home/daniel/.hermes/opencode-email-runtime"
 
-[aggregator]
-
 [aggregator.model]
 provider = "deepseek"
 name = "deepseek-flash"
