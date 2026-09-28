@@ -54,9 +54,12 @@ fi
 if [[ ! -f "$script_dir/daily-mail-pipeline.toml" ]]; then
   install -m 600 "$repo_dir/daily-mail-pipeline.toml.example" "$script_dir/daily-mail-pipeline.toml"
 fi
-if [[ ! -f "$script_dir/system-prompt.txt" ]]; then
-  install -m 600 "$repo_dir/system-prompt.txt" "$script_dir/system-prompt.txt"
-fi
+for prompt_name in summarizer-system-prompt.txt aggregator-system-prompt.txt; do
+  if [[ ! -f "$script_dir/$prompt_name" ]]; then
+    install -m 600 "$repo_dir/$prompt_name" "$script_dir/$prompt_name"
+  fi
+done
+rm -f "$script_dir/system-prompt.txt"
 install -d -m 700 "$opencode_agent_dir"
 install -m 600 "$repo_dir/opencode/agents/mail-analyzer.md" "$opencode_agent_dir/mail-analyzer.md"
 install -m 600 "$repo_dir/opencode/agents/mail-daily-aggregator.md" "$opencode_agent_dir/mail-daily-aggregator.md"

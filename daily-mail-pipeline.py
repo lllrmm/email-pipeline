@@ -30,7 +30,7 @@ def enqueue_scan_log(path:Path,config_path:Path)->dict[str,Any]:
 def main()->int:
     os.umask(0o077); p=argparse.ArgumentParser(); p.add_argument("--date"); p.add_argument("--from",dest="date_from"); p.add_argument("--to",dest="date_to"); p.add_argument("--from-time"); p.add_argument("--to-time"); p.add_argument("--mailbox",action="append"); p.add_argument("--limit-per-mailbox",type=int,default=200); p.add_argument("--config",type=Path,default=DEFAULT_CONFIG); p.add_argument("--output-root",type=Path,default=DEFAULT_OUTPUT_ROOT); p.add_argument("--scan-log",type=Path); a=p.parse_args(); config=a.config.expanduser().resolve()
     try:
-        cfg=load_config(config); boundary=ZoneInfo(str((cfg.get("program") or {}).get("timezone") or "UTC")); configure_program_timezone(str(boundary))
+        cfg=load_config(config); boundary=ZoneInfo(str(cfg.get("timezone") or "UTC")); configure_program_timezone(str(boundary))
         if a.scan_log: paths=[a.scan_log.expanduser().resolve()]
         else:
             cmd=[sys.executable,str(SCRIPT_DIR/"scan_mails.py"),"--config",str(config),"--output-root",str(a.output_root.expanduser()),"--limit-per-mailbox",str(a.limit_per_mailbox)]

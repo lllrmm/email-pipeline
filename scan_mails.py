@@ -101,7 +101,7 @@ def main() -> int:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     args = parser.parse_args()
     config = load_config(args.config.expanduser().resolve())
-    boundary_timezone = str((config.get("program") or {}).get("timezone") or "UTC")
+    boundary_timezone = str(config.get("timezone") or "UTC")
     configure_program_timezone(boundary_timezone)
     global LOGGER
     LOGGER = configure_daily_logger(args.output_root, "scanner", boundary_timezone)

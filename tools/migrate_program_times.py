@@ -170,7 +170,7 @@ def main() -> int:
     parser.add_argument("--output-root", required=True, type=Path)
     args = parser.parse_args()
     config = load_config(args.config.expanduser().resolve())
-    timezone = ZoneInfo(str((config.get("program") or {}).get("timezone") or "UTC"))
+    timezone = ZoneInfo(str(config.get("timezone") or "UTC"))
     identity = config.get("identity") or {}
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
     root = args.output_root.expanduser().resolve()

@@ -129,7 +129,7 @@ def main() -> int:
 
     config_path = args.config.expanduser().resolve()
     config = load_config(config_path)
-    timezone = ZoneInfo(str((config.get("program") or {}).get("timezone") or "UTC"))
+    timezone = ZoneInfo(str(config.get("timezone") or "UTC"))
     configure_program_timezone(str(timezone))
     target_date = args.date or dt.datetime.now(timezone).date().isoformat()
     dt.date.fromisoformat(target_date)

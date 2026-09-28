@@ -87,7 +87,7 @@ def main() -> int:
     config = load_config(config_path)
     identity = config.get("identity") or {}
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
-    timezone_name = str((config.get("program") or {}).get("timezone") or "UTC")
+    timezone_name = str(config.get("timezone") or "UTC")
     concurrency = max(1, int((config.get("summarizer") or {}).get("concurrency") or 1))
     configure_program_timezone(timezone_name)
     index = MailIdentityIndex(database)

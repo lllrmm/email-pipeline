@@ -71,7 +71,7 @@ def main() -> int:
     args = parser.parse_args()
 
     config = load_config(args.config.expanduser().resolve())
-    configure_program_timezone(str((config.get("program") or {}).get("timezone") or "UTC"))
+    configure_program_timezone(str(config.get("timezone") or "UTC"))
     identity = config.get("identity") or {}
     database_path = Path(identity.get("database_path") or (Path.home() / ".hermes" / "email" / "mail-index.sqlite3")).expanduser().resolve()
     salt_path = Path(identity.get("salt_path") or (Path.home() / ".hermes" / "email" / "pipeline-id-salt")).expanduser().resolve()

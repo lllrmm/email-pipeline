@@ -219,7 +219,7 @@ def main() -> int:
     output_dir = args.output_dir.expanduser().resolve()
     config_path = args.config.expanduser().resolve()
     cfg = load_config(config_path)
-    timezone_name = str((cfg.get("program") or {}).get("timezone") or "UTC")
+    timezone_name = str(cfg.get("timezone") or "UTC")
     configure_program_timezone(timezone_name)
     if not workdir.is_dir():
         raise RuntimeError(f"agent work directory does not exist: {workdir}")
@@ -266,15 +266,19 @@ def main() -> int:
         (run_dir / name).unlink(missing_ok=True)
 
     input_ids_json = json.dumps(pipeline_ids, ensure_ascii=False, separators=(",", ":"))
+    task_prompt = (
+        "The exact validated aggregation input is INPUT_PIPELINE_IDS_JSON="
+        f"{input_ids_json}. Read only emails/<pipeline_id>/summary.json for those IDs, "
+        "then return the required compact daily JSON digest."
+    )
+    prompt = f"{str(stage_cfg.get('system_prompt') or '').strip()}\n\n{task_prompt}".strip()
     command = [
         executable, "run", "--format", "json",
         "--agent", agent,
         "--model", model,
         "--dir", str(workdir),
         "--title", f"mail-daily:{workdir.name}",
-        "The exact validated aggregation input is INPUT_PIPELINE_IDS_JSON="
-        f"{input_ids_json}. Read only emails/<pipeline_id>/summary.json for those IDs, "
-        "then return the required compact daily JSON digest.",
+        prompt,
     ]
     completed = subprocess.run(
         command, stdin=subprocess.DEVNULL, text=True, capture_output=True,

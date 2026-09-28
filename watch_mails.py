@@ -81,7 +81,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
     config = load_config(config_path)
-    boundary_timezone = str((config.get("program") or {}).get("timezone") or "UTC")
+    boundary_timezone = str(config.get("timezone") or "UTC")
     configure_program_timezone(boundary_timezone)
     global LOGGER
     LOGGER = configure_daily_logger(Path.home() / ".hermes" / "email" / "daily", "watcher", boundary_timezone)

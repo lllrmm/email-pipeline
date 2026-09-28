@@ -136,7 +136,7 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = load_config(args.config.expanduser().resolve())
-    timezone_name = str((cfg.get("program") or {}).get("timezone") or "UTC")
+    timezone_name = str(cfg.get("timezone") or "UTC")
     configure_program_timezone(timezone_name)
     stage_cfg = cfg.get("summarizer") or {}
     opencode_cfg = stage_cfg.get("opencode") or {}
@@ -177,12 +177,13 @@ def main() -> int:
     for name in ("events.jsonl", "stderr.txt", "metadata.json", "timeout.txt"):
         (run_dir / name).unlink(missing_ok=True)
 
-    prompt = (
+    task_prompt = (
         "Process the single email authorized by request.json. "
         "You must call mail_fetch and mail_unpack, inspect all relevant MIME parts and attachments, "
         "use link inspection only when it helps verify an event or deadline, and return the exact JSON schema "
         "required by the mail-analyzer agent. Do not output Markdown."
     )
+    prompt = f"{str(stage_cfg.get('system_prompt') or '').strip()}\n\n{task_prompt}".strip()
     command = [
         executable,
         "run",

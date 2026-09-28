@@ -3,7 +3,7 @@
 Read-only Outlook IMAPClient email extraction and digest pipeline for Hermes Agent.
 
 All program-controlled timestamps are RFC3339 values in the timezone configured
-by `program.timezone` in `daily-mail-pipeline.toml`. API ranges accept any
+by the top-level `timezone` in `daily-mail-pipeline.toml`. API ranges accept any
 timezone-aware RFC3339 values and compare them as absolute instants. Times
 authored inside email headers, bodies, attachments, or linked pages are not
 normalized; they remain source material for the analysis agent.

@@ -1,7 +1,8 @@
-system_prompt_file = "system-prompt.txt"
+timezone = "Asia/Hong_Kong"
 
 [summarizer]
 concurrency = 8
+system_prompt_file = "summarizer-system-prompt.txt"
 
 [summarizer.model]
 provider = "deepseek"
@@ -15,6 +16,9 @@ executable = "/home/daniel/.opencode/bin/opencode"
 agent = "mail-analyzer"
 timeout_seconds = 600
 runtime_root = "/home/daniel/.hermes/opencode-email-runtime"
+
+[aggregator]
+system_prompt_file = "aggregator-system-prompt.txt"
 
 [aggregator.model]
 provider = "deepseek"
@@ -44,9 +48,6 @@ concurrency = 1
 idle_accelerator_mailbox = "Inbox"
 poll_seconds = 60
 debounce_seconds = 10
-
-[program]
-timezone = "Asia/Hong_Kong"
 
 [identity]
 account = "outlook"
