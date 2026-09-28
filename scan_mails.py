@@ -10,8 +10,10 @@ import os
 import sys
 from email import policy
 from email.parser import BytesParser
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -39,8 +41,9 @@ def scan_log_filename(value: str) -> str:
 
 def scan_day(config: dict[str, Any], day: str, mailboxes: list[str] | None, limit: int) -> tuple[list[dict[str, Any]], list[dict[str, str]], int]:
     date = dt.date.fromisoformat(day)
-    since = date.strftime("%d-%b-%Y")
-    before = (date + dt.timedelta(days=1)).strftime("%d-%b-%Y")
+    since = (date - dt.timedelta(days=1)).strftime("%d-%b-%Y")
+    before = (date + dt.timedelta(days=2)).strftime("%d-%b-%Y")
+    timezone = ZoneInfo(str((config.get("scan") or {}).get("timezone") or "Asia/Hong_Kong"))
     mails: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
     with connect_imap(config) as client:
@@ -49,16 +52,26 @@ def scan_day(config: dict[str, Any], day: str, mailboxes: list[str] | None, limi
             try:
                 selected = client.select_folder(folder, readonly=True)
                 uidvalidity = int(selected[b"UIDVALIDITY"])
-                uids = list(client.search(["SENTSINCE", since, "SENTBEFORE", before]))[-limit:]
+                uids = list(client.search(["SENTSINCE", since, "SENTBEFORE", before]))
                 if not uids:
                     continue
-                fetched = client.fetch(uids, [b"BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)]"])
+                fetched = client.fetch(uids, [b"BODY.PEEK[HEADER.FIELDS (MESSAGE-ID DATE)]"])
+                folder_mails: list[dict[str, Any]] = []
                 for uid in uids:
                     header = BytesParser(policy=policy.default).parsebytes(response_bytes(fetched[int(uid)]), headersonly=True)
                     rfc_message_id = normalize_rfc_message_id(str(header.get("Message-ID") or ""))
                     if not rfc_message_id:
                         raise RuntimeError(f"RFC Message-ID missing: {folder}/{uid}")
-                    mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid)})
+                    try:
+                        sent = parsedate_to_datetime(str(header.get("Date") or ""))
+                        if sent.tzinfo is None:
+                            sent = sent.replace(tzinfo=dt.timezone.utc)
+                    except Exception:
+                        continue
+                    if sent.astimezone(timezone).date() != date:
+                        continue
+                    folder_mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "sent_at": sent.isoformat()})
+                mails.extend(folder_mails[-limit:])
             except Exception as exc:
                 failures.append({"folder": folder, "error": str(exc)[:500]})
     return mails, failures, len(folders)
