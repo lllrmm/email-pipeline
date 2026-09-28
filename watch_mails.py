@@ -70,7 +70,7 @@ def event_mails(client, changes: dict[str, tuple[int, int, int]]) -> list[dict]:
             rfc = normalize_rfc_message_id(str(header.get("Message-ID") or ""))
             value = fetched[int(uid)].get(b"INTERNALDATE")
             if value is not None and value.tzinfo is None:
-                value = value.replace(tzinfo=dt.timezone.utc)
+                value = value.replace(tzinfo=dt.datetime.now().astimezone().tzinfo)
             received_at = value.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z") if value is not None else None
             mails.append({"rfc_message_id": rfc, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "received_at": received_at})
     return mails

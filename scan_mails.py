@@ -77,7 +77,7 @@ def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mai
                     if internal is None:
                         continue
                     if internal.tzinfo is None:
-                        internal = internal.replace(tzinfo=dt.timezone.utc)
+                        internal = internal.replace(tzinfo=dt.datetime.now().astimezone().tzinfo)
                     received_utc = internal.astimezone(dt.timezone.utc)
                     if not (start <= received_utc < end):
                         continue
