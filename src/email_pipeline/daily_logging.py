@@ -17,7 +17,10 @@ class LocalDailyFileHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             day = dt.datetime.now().astimezone().date().isoformat()
-            directory = self.output_root / day / "logs" / self.component
+            logs_root = self.output_root / day / "logs"
+            logs_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            logs_root.chmod(0o700)
+            directory = logs_root / self.component
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             directory.chmod(0o700)
             path = directory / f"{self.component}.log"
