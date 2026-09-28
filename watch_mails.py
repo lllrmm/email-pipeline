@@ -77,12 +77,13 @@ def event_mails(client, changes: dict[str, tuple[int, int, int]]) -> list[dict]:
 
 
 def main() -> int:
-    global LOGGER
-    LOGGER = configure_daily_logger(Path.home() / ".hermes" / "email" / "daily", "watcher")
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    boundary_timezone = str((config.get("day_boundary") or {}).get("timezone") or "UTC")
+    global LOGGER
+    LOGGER = configure_daily_logger(Path.home() / ".hermes" / "email" / "daily", "watcher", boundary_timezone)
     watch = config.get("watch") or {}
     idle_mailbox = str(watch.get("idle_accelerator_mailbox") or "Inbox")
     poll_seconds = max(15, int(watch.get("poll_seconds") or 60))

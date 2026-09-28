@@ -99,23 +99,25 @@ def main() -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     args = parser.parse_args()
-    global LOGGER
-    LOGGER = configure_daily_logger(args.output_root, "scanner")
     config = yaml.safe_load(args.config.expanduser().resolve().read_text(encoding="utf-8")) or {}
+    boundary_timezone = str((config.get("day_boundary") or {}).get("timezone") or "UTC")
+    global LOGGER
+    LOGGER = configure_daily_logger(args.output_root, "scanner", boundary_timezone)
     start = parse_utc(args.from_time)
     end = parse_utc(args.to_time)
     if start >= end:
         raise RuntimeError("--from-time must be earlier than --to-time")
     LOGGER.info("scan_start from_time=%s to_time=%s requested_mailboxes=%s", utc_text(start), utc_text(end), args.mailbox or "all")
-    first = start.date()
-    last = (end - dt.timedelta(microseconds=1)).date()
+    boundary = ZoneInfo(boundary_timezone)
+    first = start.astimezone(boundary).date()
+    last = (end - dt.timedelta(microseconds=1)).astimezone(boundary).date()
     days = [(first + dt.timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
     started = utc_now()
     mails, failures, mailbox_count = scan_range(config, start, end, args.mailbox, args.limit_per_mailbox)
     per_day = []
     total = 0
     for day in days:
-        day_mails = [mail for mail in mails if str(mail["received_at"])[:10] == day]
+        day_mails = [mail for mail in mails if parse_utc(str(mail["received_at"])).astimezone(boundary).date().isoformat() == day]
         generated = utc_now()
         log = {"schema_version": 3, "artifact_type": "mail_scan_log", "status": "completed", "date": day, "from_time": utc_text(start), "to_time": utc_text(end), "started_at": started, "completed_at": generated, "generated_at": generated, "messages_total": len(day_mails), "mails": day_mails, "rfc_message_ids": [item["rfc_message_id"] for item in day_mails], "mailboxes_total": mailbox_count, "mailboxes_failed": failures}
         path = args.output_root.expanduser().resolve() / day / "scan-log" / scan_log_filename(generated)

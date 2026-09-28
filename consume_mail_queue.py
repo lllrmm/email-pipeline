@@ -36,9 +36,9 @@ def stop(*_args) -> None:
 def event_day(event: dict, timezone_name: str) -> str:
     try:
         value = dt.datetime.fromisoformat(str(event.get("received_at") or "").replace("Z", "+00:00"))
-        return value.astimezone(dt.timezone.utc).date().isoformat()
+        return value.astimezone(ZoneInfo(timezone_name)).date().isoformat()
     except Exception:
-        return dt.datetime.now(dt.timezone.utc).date().isoformat()
+        return dt.datetime.now(ZoneInfo(timezone_name)).date().isoformat()
 
 
 def write_scan_log(events: list[dict], timezone_name: str) -> Path:
@@ -77,7 +77,7 @@ def main() -> int:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     identity = config.get("identity") or {}
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
-    timezone_name = str((config.get("scan") or {}).get("timezone") or "Asia/Hong_Kong")
+    timezone_name = str((config.get("day_boundary") or {}).get("timezone") or "UTC")
     index = MailIdentityIndex(database)
     while not STOP:
         events = index.claim_events(limit=20)

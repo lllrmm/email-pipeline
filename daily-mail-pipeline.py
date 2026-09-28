@@ -5,6 +5,7 @@ import argparse,datetime as dt,json,os,subprocess,sys
 from pathlib import Path
 from typing import Any
 import yaml
+from zoneinfo import ZoneInfo
 SCRIPT_DIR=Path(__file__).resolve().parent
 for candidate in (SCRIPT_DIR,SCRIPT_DIR/"src"):
     if str(candidate) not in sys.path: sys.path.insert(0,str(candidate))
@@ -28,6 +29,7 @@ def enqueue_scan_log(path:Path,config_path:Path)->dict[str,Any]:
 def main()->int:
     os.umask(0o077); p=argparse.ArgumentParser(); p.add_argument("--date"); p.add_argument("--from",dest="date_from"); p.add_argument("--to",dest="date_to"); p.add_argument("--from-time"); p.add_argument("--to-time"); p.add_argument("--mailbox",action="append"); p.add_argument("--limit-per-mailbox",type=int,default=200); p.add_argument("--config",type=Path,default=DEFAULT_CONFIG); p.add_argument("--output-root",type=Path,default=DEFAULT_OUTPUT_ROOT); p.add_argument("--scan-log",type=Path); a=p.parse_args(); config=a.config.expanduser().resolve()
     try:
+        cfg=yaml.safe_load(config.read_text(encoding="utf-8")) or {}; boundary=ZoneInfo(str((cfg.get("day_boundary") or {}).get("timezone") or "UTC"))
         if a.scan_log: paths=[a.scan_log.expanduser().resolve()]
         else:
             cmd=[sys.executable,str(SCRIPT_DIR/"scan_mails.py"),"--config",str(config),"--output-root",str(a.output_root.expanduser()),"--limit-per-mailbox",str(a.limit_per_mailbox)]
@@ -35,8 +37,9 @@ def main()->int:
                 if not a.from_time or not a.to_time: raise RuntimeError("--from-time and --to-time must be provided together")
                 from_time,to_time=a.from_time,a.to_time
             else:
-                first=dt.date.fromisoformat(a.date_from or a.date or dt.datetime.now(dt.timezone.utc).date().isoformat()); last=dt.date.fromisoformat(a.date_to or a.date or first.isoformat())
-                from_time=f"{first.isoformat()}T00:00:00Z"; to_time=f"{(last+dt.timedelta(days=1)).isoformat()}T00:00:00Z"
+                first=dt.date.fromisoformat(a.date_from or a.date or dt.datetime.now(boundary).date().isoformat()); last=dt.date.fromisoformat(a.date_to or a.date or first.isoformat())
+                local_start=dt.datetime.combine(first,dt.time.min,tzinfo=boundary); local_end=dt.datetime.combine(last+dt.timedelta(days=1),dt.time.min,tzinfo=boundary)
+                from_time=local_start.astimezone(dt.timezone.utc).isoformat().replace("+00:00","Z"); to_time=local_end.astimezone(dt.timezone.utc).isoformat().replace("+00:00","Z")
             cmd.extend(["--from-time",from_time,"--to-time",to_time])
             for mailbox in a.mailbox or []: cmd.extend(["--mailbox",mailbox])
             result=run_stage(cmd); paths=[Path(item["scan_log_path"]) for item in result.get("per_day") or []] if result.get("mode")=="range" else [Path(result["scan_log_path"])]

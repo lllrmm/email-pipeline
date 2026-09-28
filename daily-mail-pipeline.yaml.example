@@ -29,8 +29,8 @@ watch:
   poll_seconds: 60
   debounce_seconds: 10
 
-scan:
-  timezone: "UTC"
+day_boundary:
+  timezone: "Asia/Hong_Kong"
 
 identity:
   account: "outlook"
