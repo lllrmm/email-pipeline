@@ -17,12 +17,12 @@ class EmailSummaryKeyTests(unittest.TestCase):
     def test_key_is_replaced_without_touching_other_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            config = root / "pipeline.yaml"
+            config = root / "pipeline.toml"
             env = root / ".env"
             config.write_text(
-                "api:\n"
-                "  api_key: \"old-inline\"\n"
-                "  api_key_env: \"DEEPSEEK_API_KEY\"\n",
+                "[api]\n"
+                "api_key = \"old-inline\"\n"
+                "api_key_env = \"DEEPSEEK_API_KEY\"\n",
                 encoding="utf-8",
             )
             env.write_text(
@@ -35,8 +35,8 @@ class EmailSummaryKeyTests(unittest.TestCase):
 
             config_text = config.read_text(encoding="utf-8")
             env_text = env.read_text(encoding="utf-8")
-            self.assertIn('api_key: ""', config_text)
-            self.assertIn('api_key_env: "EMAIL_SUMMARY_DEEPSEEK_API_KEY"', config_text)
+            self.assertIn('api_key = ""', config_text)
+            self.assertIn('api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"', config_text)
             self.assertIn("DEEPSEEK_API_KEY=general-key", env_text)
             self.assertEqual(env_text.count("EMAIL_SUMMARY_DEEPSEEK_API_KEY=new-summary-key"), 1)
             self.assertNotIn("old-summary-key", env_text)

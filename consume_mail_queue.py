@@ -13,13 +13,12 @@ import time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import yaml
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
+from email_pipeline.config import load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.mail_identity import get_or_create_salt  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
@@ -27,7 +26,7 @@ from index_mail import register_mail  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, filename_timestamp, now_rfc3339  # noqa: E402
 
 STOP = False
-CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
+CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.toml"
 
 
 def stop(*_args) -> None:
@@ -76,7 +75,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    config = load_config(config_path)
     identity = config.get("identity") or {}
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
     timezone_name = str((config.get("program") or {}).get("timezone") or "UTC")

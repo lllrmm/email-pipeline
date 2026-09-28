@@ -15,7 +15,13 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import yaml
+import sys
+
+SCRIPT_DIR = Path(__file__).resolve().parents[1]
+if str(SCRIPT_DIR / "src") not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR / "src"))
+
+from email_pipeline.config import load_config  # noqa: E402
 
 
 PROGRAM_TIME_KEYS = {
@@ -163,7 +169,7 @@ def main() -> int:
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
     args = parser.parse_args()
-    config = yaml.safe_load(args.config.expanduser().resolve().read_text(encoding="utf-8")) or {}
+    config = load_config(args.config.expanduser().resolve())
     timezone = ZoneInfo(str((config.get("program") or {}).get("timezone") or "UTC"))
     identity = config.get("identity") or {}
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()

@@ -4,14 +4,14 @@ from __future__ import annotations
 import argparse,datetime as dt,json,os,subprocess,sys
 from pathlib import Path
 from typing import Any
-import yaml
 from zoneinfo import ZoneInfo
 SCRIPT_DIR=Path(__file__).resolve().parent
 for candidate in (SCRIPT_DIR,SCRIPT_DIR/"src"):
     if str(candidate) not in sys.path: sys.path.insert(0,str(candidate))
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+from email_pipeline.config import load_config  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
-DEFAULT_CONFIG=SCRIPT_DIR/"daily-mail-pipeline.yaml"
+DEFAULT_CONFIG=SCRIPT_DIR/"daily-mail-pipeline.toml"
 DEFAULT_OUTPUT_ROOT=Path.home()/".hermes/email/daily"
 def run_stage(command:list[str])->dict[str,Any]:
     cp=subprocess.run(command,text=True,capture_output=True,check=False)
@@ -21,7 +21,7 @@ def run_stage(command:list[str])->dict[str,Any]:
     if not value.get("ok"): raise RuntimeError(str(value))
     return value
 def enqueue_scan_log(path:Path,config_path:Path)->dict[str,Any]:
-    log=json.loads(path.read_text(encoding="utf-8")); config=yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}; identity_cfg=config.get("identity") or {}; account=str(identity_cfg.get("account") or "outlook"); database=Path(identity_cfg.get("database_path") or (Path.home()/".hermes/email/mail-index.sqlite3")).expanduser().resolve(); index=MailIdentityIndex(database); queued=skipped=0
+    log=json.loads(path.read_text(encoding="utf-8")); config=load_config(config_path); identity_cfg=config.get("identity") or {}; account=str(identity_cfg.get("account") or "outlook"); database=Path(identity_cfg.get("database_path") or (Path.home()/".hermes/email/mail-index.sqlite3")).expanduser().resolve(); index=MailIdentityIndex(database); queued=skipped=0
     for mail in log.get("mails") or []:
         inserted=index.enqueue_event(account=account,rfc_message_id=str(mail["rfc_message_id"]),folder=str(mail["folder"]),uidvalidity=int(mail["uidvalidity"]),uid=int(mail["uid"]),received_at=mail.get("received_at"))
         if inserted: queued+=1
@@ -30,7 +30,7 @@ def enqueue_scan_log(path:Path,config_path:Path)->dict[str,Any]:
 def main()->int:
     os.umask(0o077); p=argparse.ArgumentParser(); p.add_argument("--date"); p.add_argument("--from",dest="date_from"); p.add_argument("--to",dest="date_to"); p.add_argument("--from-time"); p.add_argument("--to-time"); p.add_argument("--mailbox",action="append"); p.add_argument("--limit-per-mailbox",type=int,default=200); p.add_argument("--config",type=Path,default=DEFAULT_CONFIG); p.add_argument("--output-root",type=Path,default=DEFAULT_OUTPUT_ROOT); p.add_argument("--scan-log",type=Path); a=p.parse_args(); config=a.config.expanduser().resolve()
     try:
-        cfg=yaml.safe_load(config.read_text(encoding="utf-8")) or {}; boundary=ZoneInfo(str((cfg.get("program") or {}).get("timezone") or "UTC")); configure_program_timezone(str(boundary))
+        cfg=load_config(config); boundary=ZoneInfo(str((cfg.get("program") or {}).get("timezone") or "UTC")); configure_program_timezone(str(boundary))
         if a.scan_log: paths=[a.scan_log.expanduser().resolve()]
         else:
             cmd=[sys.executable,str(SCRIPT_DIR/"scan_mails.py"),"--config",str(config),"--output-root",str(a.output_root.expanduser()),"--limit-per-mailbox",str(a.limit_per_mailbox)]

@@ -3,7 +3,7 @@
 Read-only Outlook IMAPClient email extraction and digest pipeline for Hermes Agent.
 
 All program-controlled timestamps are RFC3339 values in the timezone configured
-by `program.timezone` in `daily-mail-pipeline.yaml`. API ranges accept any
+by `program.timezone` in `daily-mail-pipeline.toml`. API ranges accept any
 timezone-aware RFC3339 values and compare them as absolute instants. Times
 authored inside email headers, bodies, attachments, or linked pages are not
 normalized; they remain source material for the analysis agent.
@@ -31,7 +31,7 @@ consume_mail_queue.py              Durable queue consumer and summarizer
 aggregate-mails-agentic.py         Aggregate an explicit pipeline ID list
 get_daily_aggregation.py           Wait for one date's queue, then aggregate
 src/email_pipeline/mime_extract.py MIME and attachment extraction library
-daily-mail-pipeline.yaml.example   Configuration without credentials
+daily-mail-pipeline.toml.example   Configuration without credentials
 tests/                             Synthetic MIME regression tests
 ```
 
@@ -73,7 +73,7 @@ python3 summarize-mail-agentic.py \
   --pipeline-id <pipeline_id> \
   --mail-dir ~/.hermes/email/daily/2026-09-25/emails/<pipeline_id> \
   --output ~/.hermes/email/daily/2026-09-25/emails/<pipeline_id>/summary.json \
-  --config ~/.hermes/scripts/daily-mail-pipeline.yaml
+  --config ~/.hermes/scripts/daily-mail-pipeline.toml
 ```
 
 The chain uses a dedicated OpenCode HOME/config/data directory and injects the
@@ -189,7 +189,7 @@ mode `0600`. Remote images and links are recorded but never fetched.
 
 ## Credentials
 
-Do not put API keys in YAML. Store `DEEPSEEK_API_KEY` in `~/.hermes/.env`, the
+Do not put API keys in TOML. Store `DEEPSEEK_API_KEY` in `~/.hermes/.env`, the
 Hermes vault, or an egress credential injector. Outlook OAuth token files stay
 outside this repository.
 
@@ -204,17 +204,17 @@ chmod +x install.sh
 
 The installer backs up an existing pipeline as
 `daily-mail-pipeline.py.bak-pre-mime-v2`, installs the parser package, and
-compiles the deployed files. It does not alter OAuth tokens, YAML credentials,
+compiles the deployed files. It does not alter OAuth tokens, TOML credentials,
 cron jobs, or mailbox state.
 
 For an existing deployment, migrate a literal model key and harden stored mail:
 
 ```bash
 python3 tools/migrate_existing_config.py \
-  --config ~/.hermes/scripts/daily-mail-pipeline.yaml \
+  --config ~/.hermes/scripts/daily-mail-pipeline.toml \
   --env ~/.hermes/.env \
   --email-root ~/.hermes/email
 ```
 
-The migration creates `daily-mail-pipeline.yaml.bak-pre-mime-v2`, never prints
+The migration creates `daily-mail-pipeline.toml.bak-pre-mime-v2`, never prints
 the secret, and is safe to run more than once.

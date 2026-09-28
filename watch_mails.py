@@ -13,20 +13,19 @@ from pathlib import Path
 from email import policy
 from email.parser import BytesParser
 
-import yaml
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
+from email_pipeline.config import load_config  # noqa: E402
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
 from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, normalize_rfc_message_id  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 
-CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
+CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.toml"
 STATE_PATH = Path.home() / ".hermes" / "email" / "watch-state.json"
 STOP = False
 LOGGER = __import__("logging").getLogger("email_pipeline.watcher")
@@ -81,7 +80,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    config = load_config(config_path)
     boundary_timezone = str((config.get("program") or {}).get("timezone") or "UTC")
     configure_program_timezone(boundary_timezone)
     global LOGGER

@@ -14,17 +14,16 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
+from email_pipeline.config import load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, now, now_rfc3339  # noqa: E402
 
-DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
+DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.toml"
 
 
 def generated_at() -> str:
@@ -46,13 +45,6 @@ def secure_write(path: Path, text: str) -> None:
         except OSError:
             pass
         raise
-
-
-def load_config(path: Path) -> dict[str, Any]:
-    value = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(value, dict):
-        raise RuntimeError("config must be a YAML mapping")
-    return value
 
 
 def resolve_email_key(cfg: dict[str, Any]) -> str:

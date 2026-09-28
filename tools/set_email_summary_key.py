@@ -43,16 +43,16 @@ def configure_key(config_path: Path, env_path: Path, env_name: str, key: str) ->
 
     config_text = config_path.read_text(encoding="utf-8")
     config_text, count = re.subn(
-        r"(?m)^(?P<indent>[ \t]*)api_key_env:[^\r\n]*$",
-        rf'\g<indent>api_key_env: "{env_name}"',
+        r"(?m)^(?P<indent>[ \t]*)api_key_env\s*=[^\r\n]*$",
+        rf'\g<indent>api_key_env = "{env_name}"',
         config_text,
         count=1,
     )
     if count != 1:
         raise RuntimeError("api_key_env entry not found in config")
     config_text = re.sub(
-        r"(?m)^(?P<indent>[ \t]*)api_key:[^\r\n]*$",
-        r'\g<indent>api_key: ""',
+        r"(?m)^(?P<indent>[ \t]*)api_key\s*=[^\r\n]*$",
+        r'\g<indent>api_key = ""',
         config_text,
         count=1,
     )
