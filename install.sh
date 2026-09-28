@@ -9,10 +9,14 @@ package_dir="$script_dir/email_pipeline"
 opencode_agent_dir="$HOME/.config/opencode/agents"
 opencode_tool_dir="$HOME/.config/opencode/tools"
 opencode_email_config_dir="$hermes_home/opencode-email-runtime/config/opencode"
+runtime_python=${HERMES_PYTHON:-"$hermes_home/hermes-agent/venv/bin/python"}
+if [[ ! -x "$runtime_python" ]]; then
+  runtime_python=python3
+fi
 
 install -d -m 700 "$script_dir"
-if ! python3 -c 'import imapclient' 2>/dev/null; then
-  python3 -m pip install --user 'IMAPClient>=3.0,<4'
+if ! "$runtime_python" -c 'import imapclient' 2>/dev/null; then
+  "$runtime_python" -m pip install 'IMAPClient>=3.0,<4'
 fi
 
 install -m 700 "$repo_dir/daily-mail-pipeline.py" "$target"
