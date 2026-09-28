@@ -40,12 +40,7 @@ def parse_timestamp(value: Any) -> dt.datetime | None:
 
 
 def event_date(event: dict[str, Any], index: MailIdentityIndex, timezone: ZoneInfo) -> str | None:
-    timestamp = parse_timestamp(event.get("sent_at"))
-    pipeline_id = event.get("pipeline_id")
-    if timestamp is None and pipeline_id:
-        identity = index.lookup_pipeline_id(str(pipeline_id))
-        metadata = (identity or {}).get("metadata") or {}
-        timestamp = parse_timestamp(metadata.get("sent_at"))
+    timestamp = parse_timestamp(event.get("received_at"))
     if timestamp is None:
         timestamp = parse_timestamp(event.get("detected_at"))
     return timestamp.astimezone(timezone).date().isoformat() if timestamp else None

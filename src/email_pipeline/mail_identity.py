@@ -131,6 +131,7 @@ class MailIdentityIndex:
                     uidvalidity INTEGER NOT NULL,
                     imap_uid INTEGER NOT NULL,
                     sent_at TEXT,
+                    received_at TEXT,
                     detected_at TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'done')),
                     attempts INTEGER NOT NULL DEFAULT 0,
@@ -159,6 +160,8 @@ class MailIdentityIndex:
             queue_columns = {row["name"] for row in connection.execute("PRAGMA table_info(email_event_queue)").fetchall()}
             if "sent_at" not in queue_columns:
                 connection.execute("ALTER TABLE email_event_queue ADD COLUMN sent_at TEXT")
+            if "received_at" not in queue_columns:
+                connection.execute("ALTER TABLE email_event_queue ADD COLUMN received_at TEXT")
             connection.commit()
         self.path.chmod(0o600)
 
@@ -394,27 +397,27 @@ class MailIdentityIndex:
                 raise KeyError(f"unknown pipeline id: {pipeline_id}")
             connection.commit()
 
-    def enqueue_event(self, *, account: str, rfc_message_id: str, folder: str, uidvalidity: int, uid: int, sent_at: str | None = None, requeue: bool = False) -> bool:
+    def enqueue_event(self, *, account: str, rfc_message_id: str, folder: str, uidvalidity: int, uid: int, received_at: str | None = None, requeue: bool = False) -> bool:
         now = dt.datetime.now(dt.timezone.utc).isoformat()
         rfc_message_id = normalize_rfc_message_id(rfc_message_id)
         with closing(self.connect()) as connection:
             if requeue:
                 cursor = connection.execute(
                     """INSERT INTO email_event_queue
-                    (account, rfc_message_id, folder, uidvalidity, imap_uid, sent_at, detected_at)
+                    (account, rfc_message_id, folder, uidvalidity, imap_uid, received_at, detected_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(account, folder, uidvalidity, imap_uid) DO UPDATE SET
-                        sent_at=COALESCE(excluded.sent_at,email_event_queue.sent_at),
+                        received_at=COALESCE(excluded.received_at,email_event_queue.received_at),
                         status='pending', completed_at=NULL, claimed_at=NULL, last_error=NULL""",
-                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), sent_at, now),
+                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), received_at, now),
                 )
             else:
                 cursor = connection.execute(
                     """INSERT INTO email_event_queue
-                    (account, rfc_message_id, folder, uidvalidity, imap_uid, sent_at, detected_at)
+                    (account, rfc_message_id, folder, uidvalidity, imap_uid, received_at, detected_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(account, folder, uidvalidity, imap_uid) DO NOTHING""",
-                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), sent_at, now),
+                    (account, rfc_message_id, folder, int(uidvalidity), int(uid), received_at, now),
                 )
             connection.commit()
         return cursor.rowcount == 1

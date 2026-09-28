@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import hashlib
 import ipaddress
 import json
@@ -16,7 +15,6 @@ import tempfile
 from email import policy
 from email.message import Message
 from email.parser import BytesParser
-from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -70,24 +68,11 @@ def header_text(message: Message, name: str) -> str:
     return ", ".join(str(value) for value in message.get_all(name, [])).strip()
 
 
-def normalize_sent_at(value: str) -> str | None:
-    if not value:
-        return None
-    try:
-        parsed = parsedate_to_datetime(value)
-    except (TypeError, ValueError, OverflowError):
-        return value
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=dt.timezone.utc)
-    return parsed.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")
-
-
 def persist_message_metadata(index: MailIdentityIndex, pipeline_id: str, data: bytes) -> None:
     message = BytesParser(policy=policy.default).parsebytes(data, headersonly=True)
     date_header = header_text(message, "Date")
     index.update_metadata(
         pipeline_id,
-        sent_at=normalize_sent_at(date_header),
         date_header=date_header or None,
         subject=header_text(message, "Subject") or None,
         sender=header_text(message, "From") or None,

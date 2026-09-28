@@ -35,7 +35,7 @@ def stop(*_args) -> None:
 
 def event_day(event: dict, timezone_name: str) -> str:
     try:
-        value = dt.datetime.fromisoformat(str(event.get("sent_at") or "").replace("Z", "+00:00"))
+        value = dt.datetime.fromisoformat(str(event.get("received_at") or "").replace("Z", "+00:00"))
         return value.astimezone(dt.timezone.utc).date().isoformat()
     except Exception:
         return dt.datetime.now(dt.timezone.utc).date().isoformat()

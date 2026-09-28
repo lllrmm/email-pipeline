@@ -12,7 +12,6 @@ import time
 from pathlib import Path
 from email import policy
 from email.parser import BytesParser
-from email.utils import parsedate_to_datetime
 
 import yaml
 
@@ -63,18 +62,15 @@ def event_mails(client, changes: dict[str, tuple[int, int, int]]) -> list[dict]:
         uids = list(client.search(["UID", f"{start}:{end}"]))
         if not uids:
             continue
-        fetched = client.fetch(uids, [b"BODY.PEEK[HEADER.FIELDS (MESSAGE-ID DATE)]"])
+        fetched = client.fetch(uids, [b"INTERNALDATE", b"BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)]"])
         for uid in uids:
             header = BytesParser(policy=policy.default).parsebytes(response_bytes(fetched[int(uid)]), headersonly=True)
             rfc = normalize_rfc_message_id(str(header.get("Message-ID") or ""))
-            try:
-                value = parsedate_to_datetime(str(header.get("Date") or ""))
-                if value.tzinfo is None:
-                    value = value.replace(tzinfo=dt.timezone.utc)
-                sent_at = value.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")
-            except Exception:
-                sent_at = None
-            mails.append({"rfc_message_id": rfc, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "sent_at": sent_at})
+            value = fetched[int(uid)].get(b"INTERNALDATE")
+            if value is not None and value.tzinfo is None:
+                value = value.replace(tzinfo=dt.timezone.utc)
+            received_at = value.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z") if value is not None else None
+            mails.append({"rfc_message_id": rfc, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "received_at": received_at})
     return mails
 
 
@@ -103,7 +99,7 @@ def main() -> int:
                     mails = event_mails(client, changes)
                     inserted = 0
                     for mail in mails:
-                        inserted += int(index.enqueue_event(account=account, rfc_message_id=mail["rfc_message_id"], folder=mail["folder"], uidvalidity=mail["uidvalidity"], uid=mail["uid"], sent_at=mail.get("sent_at")))
+                        inserted += int(index.enqueue_event(account=account, rfc_message_id=mail["rfc_message_id"], folder=mail["folder"], uidvalidity=mail["uidvalidity"], uid=mail["uid"], received_at=mail.get("received_at")))
                     if mails:
                         print(json.dumps({"event": "enqueued", "detected": len(mails), "inserted": inserted}), flush=True)
                 previous = current

@@ -54,7 +54,8 @@ class OpenCodeMailChainTests(unittest.TestCase):
             metadata = index.lookup_pipeline_id(pipeline_id)["metadata"]
 
             self.assertEqual(fetched["status"], "cached")
-            self.assertEqual(metadata["sent_at"], "2026-09-28T04:34:56Z")
+            self.assertIsNone(metadata["sent_at"])
+            self.assertEqual(metadata["date_header"], "Mon, 28 Sep 2026 12:34:56 +0800")
             self.assertEqual(metadata["subject"], "Metadata subject")
             self.assertEqual(metadata["sender"], "Sender <sender@example.com>")
             self.assertEqual(metadata["recipients"], "One <one@example.com>, Two <two@example.com>")

@@ -10,7 +10,6 @@ import os
 import sys
 from email import policy
 from email.parser import BytesParser
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
@@ -60,26 +59,25 @@ def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mai
             try:
                 selected = client.select_folder(folder, readonly=True)
                 uidvalidity = int(selected[b"UIDVALIDITY"])
-                uids = list(client.search(["SENTSINCE", since, "SENTBEFORE", before]))
+                uids = list(client.search(["SINCE", since, "BEFORE", before]))
                 if not uids:
                     continue
-                fetched = client.fetch(uids, [b"BODY.PEEK[HEADER.FIELDS (MESSAGE-ID DATE)]"])
+                fetched = client.fetch(uids, [b"INTERNALDATE", b"BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)]"])
                 folder_mails: list[dict[str, Any]] = []
                 for uid in uids:
                     header = BytesParser(policy=policy.default).parsebytes(response_bytes(fetched[int(uid)]), headersonly=True)
                     rfc_message_id = normalize_rfc_message_id(str(header.get("Message-ID") or ""))
                     if not rfc_message_id:
                         raise RuntimeError(f"RFC Message-ID missing: {folder}/{uid}")
-                    try:
-                        sent = parsedate_to_datetime(str(header.get("Date") or ""))
-                        if sent.tzinfo is None:
-                            sent = sent.replace(tzinfo=dt.timezone.utc)
-                    except Exception:
+                    internal = fetched[int(uid)].get(b"INTERNALDATE")
+                    if internal is None:
                         continue
-                    sent_utc = sent.astimezone(dt.timezone.utc)
-                    if not (start <= sent_utc < end):
+                    if internal.tzinfo is None:
+                        internal = internal.replace(tzinfo=dt.timezone.utc)
+                    received_utc = internal.astimezone(dt.timezone.utc)
+                    if not (start <= received_utc < end):
                         continue
-                    folder_mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "sent_at": utc_text(sent_utc)})
+                    folder_mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "received_at": utc_text(received_utc)})
                 mails.extend(folder_mails[-limit:])
             except Exception as exc:
                 failures.append({"folder": folder, "error": str(exc)[:500]})
@@ -109,7 +107,7 @@ def main() -> int:
     per_day = []
     total = 0
     for day in days:
-        day_mails = [mail for mail in mails if str(mail["sent_at"])[:10] == day]
+        day_mails = [mail for mail in mails if str(mail["received_at"])[:10] == day]
         generated = utc_now()
         log = {"schema_version": 3, "artifact_type": "mail_scan_log", "status": "completed", "date": day, "from_time": utc_text(start), "to_time": utc_text(end), "started_at": started, "completed_at": generated, "generated_at": generated, "messages_total": len(day_mails), "mails": day_mails, "rfc_message_ids": [item["rfc_message_id"] for item in day_mails], "mailboxes_total": mailbox_count, "mailboxes_failed": failures}
         path = args.output_root.expanduser().resolve() / day / "scan-log" / scan_log_filename(generated)

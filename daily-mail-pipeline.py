@@ -21,7 +21,7 @@ def run_stage(command:list[str])->dict[str,Any]:
 def enqueue_scan_log(path:Path,config_path:Path)->dict[str,Any]:
     log=json.loads(path.read_text(encoding="utf-8")); config=yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}; identity_cfg=config.get("identity") or {}; account=str(identity_cfg.get("account") or "outlook"); database=Path(identity_cfg.get("database_path") or (Path.home()/".hermes/email/mail-index.sqlite3")).expanduser().resolve(); index=MailIdentityIndex(database); queued=skipped=0
     for mail in log.get("mails") or []:
-        inserted=index.enqueue_event(account=account,rfc_message_id=str(mail["rfc_message_id"]),folder=str(mail["folder"]),uidvalidity=int(mail["uidvalidity"]),uid=int(mail["uid"]),sent_at=mail.get("sent_at"))
+        inserted=index.enqueue_event(account=account,rfc_message_id=str(mail["rfc_message_id"]),folder=str(mail["folder"]),uidvalidity=int(mail["uidvalidity"]),uid=int(mail["uid"]),received_at=mail.get("received_at"))
         if inserted: queued+=1
         else: skipped+=1
     return {"date":log.get("date"),"messages_total":len(log.get("mails") or []),"queued":queued,"skipped":skipped,"mailboxes_total":log.get("mailboxes_total"),"mailboxes_failed":log.get("mailboxes_failed") or []}
