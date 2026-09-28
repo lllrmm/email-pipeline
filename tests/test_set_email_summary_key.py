@@ -20,7 +20,10 @@ class EmailSummaryKeyTests(unittest.TestCase):
             config = root / "pipeline.toml"
             env = root / ".env"
             config.write_text(
-                "[api]\n"
+                "[summarizer.api]\n"
+                "api_key = \"old-inline\"\n"
+                "api_key_env = \"DEEPSEEK_API_KEY\"\n"
+                "[aggregator.api]\n"
                 "api_key = \"old-inline\"\n"
                 "api_key_env = \"DEEPSEEK_API_KEY\"\n",
                 encoding="utf-8",
@@ -35,8 +38,8 @@ class EmailSummaryKeyTests(unittest.TestCase):
 
             config_text = config.read_text(encoding="utf-8")
             env_text = env.read_text(encoding="utf-8")
-            self.assertIn('api_key = ""', config_text)
-            self.assertIn('api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"', config_text)
+            self.assertEqual(config_text.count('api_key = ""'), 2)
+            self.assertEqual(config_text.count('api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"'), 2)
             self.assertIn("DEEPSEEK_API_KEY=general-key", env_text)
             self.assertEqual(env_text.count("EMAIL_SUMMARY_DEEPSEEK_API_KEY=new-summary-key"), 1)
             self.assertNotIn("old-summary-key", env_text)

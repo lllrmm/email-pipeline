@@ -85,7 +85,7 @@ def main() -> int:
     configure_program_timezone(boundary_timezone)
     global LOGGER
     LOGGER = configure_daily_logger(Path.home() / ".hermes" / "email" / "daily", "watcher", boundary_timezone)
-    watch = config.get("watch") or {}
+    watch = config.get("watcher") or {}
     idle_mailbox = str(watch.get("idle_accelerator_mailbox") or "Inbox")
     poll_seconds = max(15, int(watch.get("poll_seconds") or 60))
     debounce_seconds = max(1, int(watch.get("debounce_seconds") or 10))

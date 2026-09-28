@@ -47,12 +47,15 @@ def secure_write(path: Path, text: str) -> None:
         raise
 
 
-def resolve_email_key(cfg: dict[str, Any]) -> str:
-    api = cfg.get("api") or {}
+def resolve_email_key(stage_cfg: dict[str, Any]) -> str:
+    api = stage_cfg.get("api") or {}
     env_name = str(api.get("api_key_env") or "EMAIL_SUMMARY_DEEPSEEK_API_KEY")
     value = os.environ.get(env_name, "").strip()
     if value:
         return value
+    inline_value = str(api.get("api_key") or "").strip()
+    if inline_value:
+        return inline_value
     env_path = Path.home() / ".hermes" / ".env"
     for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith(f"{env_name}="):
@@ -135,10 +138,14 @@ def main() -> int:
     cfg = load_config(args.config.expanduser().resolve())
     timezone_name = str((cfg.get("program") or {}).get("timezone") or "UTC")
     configure_program_timezone(timezone_name)
-    opencode_cfg = cfg.get("opencode") or {}
+    stage_cfg = cfg.get("summarizer") or {}
+    opencode_cfg = stage_cfg.get("opencode") or {}
+    model_cfg = stage_cfg.get("model") or {}
     executable = str(opencode_cfg.get("executable") or (Path.home() / ".opencode" / "bin" / "opencode"))
     agent = str(opencode_cfg.get("agent") or "mail-analyzer")
-    model = str(opencode_cfg.get("model") or "deepseek/deepseek-flash")
+    provider = str(model_cfg.get("provider") or "deepseek")
+    model_name = str(model_cfg.get("name") or "deepseek-flash")
+    model = f"{provider}/{model_name}"
     timeout = int(opencode_cfg.get("timeout_seconds") or 600)
     runtime_root = Path(
         opencode_cfg.get("runtime_root")
@@ -187,7 +194,7 @@ def main() -> int:
         prompt,
     ]
     env = dict(os.environ)
-    env["DEEPSEEK_API_KEY"] = resolve_email_key(cfg)
+    env["DEEPSEEK_API_KEY"] = resolve_email_key(stage_cfg)
     env["HERMES_HOME"] = str(Path.home() / ".hermes")
     env["PATH"] = os.pathsep.join([
         str(Path.home() / ".local" / "bin"),

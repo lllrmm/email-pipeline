@@ -46,15 +46,13 @@ def configure_key(config_path: Path, env_path: Path, env_name: str, key: str) ->
         r"(?m)^(?P<indent>[ \t]*)api_key_env\s*=[^\r\n]*$",
         rf'\g<indent>api_key_env = "{env_name}"',
         config_text,
-        count=1,
     )
-    if count != 1:
-        raise RuntimeError("api_key_env entry not found in config")
+    if count < 1:
+        raise RuntimeError("api_key_env entries not found in config")
     config_text = re.sub(
         r"(?m)^(?P<indent>[ \t]*)api_key\s*=[^\r\n]*$",
         r'\g<indent>api_key = ""',
         config_text,
-        count=1,
     )
     atomic_write(config_path, config_text.rstrip() + "\n")
 

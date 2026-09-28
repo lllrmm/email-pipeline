@@ -98,11 +98,15 @@ def secure_write(path: Path, text: str) -> None:
         raise
 
 
-def resolve_key(cfg: dict[str, Any]) -> str:
-    env_name = str((cfg.get("api") or {}).get("api_key_env") or "EMAIL_SUMMARY_DEEPSEEK_API_KEY")
+def resolve_key(stage_cfg: dict[str, Any]) -> str:
+    api = stage_cfg.get("api") or {}
+    env_name = str(api.get("api_key_env") or "EMAIL_SUMMARY_DEEPSEEK_API_KEY")
     value = os.environ.get(env_name, "").strip()
     if value:
         return value
+    inline_value = str(api.get("api_key") or "").strip()
+    if inline_value:
+        return inline_value
     for line in (Path.home() / ".hermes" / ".env").read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith(f"{env_name}="):
             return line.split("=", 1)[1].strip().strip('"').strip("'")
@@ -226,9 +230,14 @@ def main() -> int:
     pipeline_ids = list(dict.fromkeys(args.pipeline_id_list))
     sent_times = validate_pipeline_inputs(workdir, pipeline_ids)
     earliest_email_at, latest_email_at = email_time_bounds(sent_times)
-    oc = cfg.get("opencode") or {}
+    stage_cfg = cfg.get("aggregator") or {}
+    oc = stage_cfg.get("opencode") or {}
+    model_cfg = stage_cfg.get("model") or {}
     executable = str(oc.get("executable") or (Path.home() / ".opencode" / "bin" / "opencode"))
-    model = str(oc.get("model") or "deepseek/deepseek-flash")
+    agent = str(oc.get("agent") or "mail-daily-aggregator")
+    provider = str(model_cfg.get("provider") or "deepseek")
+    model_name = str(model_cfg.get("name") or "deepseek-flash")
+    model = f"{provider}/{model_name}"
     timeout = int(oc.get("timeout_seconds") or 600)
     runtime_root = Path(oc.get("runtime_root") or (Path.home() / ".hermes" / "opencode-email-runtime")).expanduser().resolve()
     runtime_config = runtime_root / "config"
@@ -242,7 +251,7 @@ def main() -> int:
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     env = dict(os.environ)
-    env["DEEPSEEK_API_KEY"] = resolve_key(cfg)
+    env["DEEPSEEK_API_KEY"] = resolve_key(stage_cfg)
     env["HOME"] = str(runtime_home)
     env["XDG_CONFIG_HOME"] = str(runtime_config)
     env["XDG_DATA_HOME"] = str(runtime_data)
@@ -259,7 +268,7 @@ def main() -> int:
     input_ids_json = json.dumps(pipeline_ids, ensure_ascii=False, separators=(",", ":"))
     command = [
         executable, "run", "--format", "json",
-        "--agent", "mail-daily-aggregator",
+        "--agent", agent,
         "--model", model,
         "--dir", str(workdir),
         "--title", f"mail-daily:{workdir.name}",
