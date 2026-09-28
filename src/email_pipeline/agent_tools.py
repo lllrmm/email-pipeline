@@ -129,7 +129,8 @@ def command_fetch(workspace: Path) -> dict[str, Any]:
             continue
         for attempt in range(3):
             try:
-                config_path = Path.home() / ".hermes" / "scripts" / "daily-mail-pipeline.yaml"
+                hermes_home = Path(os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
+                config_path = hermes_home / "scripts" / "daily-mail-pipeline.yaml"
                 config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
                 data = fetch_raw(config, folder, int(uidvalidity), int(uid))
                 secure_write_bytes(eml_path, data)

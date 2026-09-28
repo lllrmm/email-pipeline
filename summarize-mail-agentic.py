@@ -241,7 +241,8 @@ def main() -> int:
         "tools_used": tools_used,
         "returncode": completed.returncode,
     }, ensure_ascii=False, indent=2))
-    if completed.returncode != 0 or result is None:
+    required_artifacts = (workspace / "message.eml", workspace / "manifest.json")
+    if completed.returncode != 0 or result is None or not all(path.is_file() for path in required_artifacts):
         print(json.dumps({"ok": False, "pipeline_id": pipeline_id, "processor": processor}, ensure_ascii=False, indent=2))
         return 1
     output = {

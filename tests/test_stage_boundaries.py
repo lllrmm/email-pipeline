@@ -64,6 +64,8 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertNotIn("output_path.name", source)
         self.assertIn("workspace not in output_path.parents", source)
         self.assertIn('runtime_root / "sessions" / pipeline_id', source)
+        self.assertIn('workspace / "message.eml"', source)
+        self.assertIn('workspace / "manifest.json"', source)
 
     def test_orchestrator_has_no_provider_or_parser_dependency(self) -> None:
         source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
