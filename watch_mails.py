@@ -21,12 +21,14 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
         sys.path.insert(0, str(candidate))
 
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
+from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, normalize_rfc_message_id  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 
 CONFIG_PATH = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 STATE_PATH = Path.home() / ".hermes" / "email" / "watch-state.json"
 STOP = False
+LOGGER = __import__("logging").getLogger("email_pipeline.watcher")
 
 
 def stop(*_args) -> None:
@@ -75,6 +77,8 @@ def event_mails(client, changes: dict[str, tuple[int, int, int]]) -> list[dict]:
 
 
 def main() -> int:
+    global LOGGER
+    LOGGER = configure_daily_logger(Path.home() / ".hermes" / "email" / "daily", "watcher")
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
@@ -88,6 +92,7 @@ def main() -> int:
     database = Path(identity.get("database_path") or (Path.home() / ".hermes/email/mail-index.sqlite3")).expanduser().resolve()
     index = MailIdentityIndex(database)
     previous = json.loads(STATE_PATH.read_text(encoding="utf-8")) if STATE_PATH.is_file() else {}
+    LOGGER.info("watcher_start poll_seconds=%d debounce_seconds=%d idle_accelerator=%s", poll_seconds, debounce_seconds, idle_mailbox)
     while not STOP:
         try:
             with connect_imap(config) as client:
@@ -101,7 +106,7 @@ def main() -> int:
                     for mail in mails:
                         inserted += int(index.enqueue_event(account=account, rfc_message_id=mail["rfc_message_id"], folder=mail["folder"], uidvalidity=mail["uidvalidity"], uid=mail["uid"], received_at=mail.get("received_at")))
                     if mails:
-                        print(json.dumps({"event": "enqueued", "detected": len(mails), "inserted": inserted}), flush=True)
+                        LOGGER.info("enqueued detected=%d inserted=%d changed_folders=%s", len(mails), inserted, sorted(changes))
                 previous = current
                 secure_write_text(STATE_PATH, json.dumps(current, ensure_ascii=False, indent=2))
                 client.select_folder(idle_mailbox, readonly=True)
@@ -109,8 +114,9 @@ def main() -> int:
                 client.idle_check(timeout=poll_seconds)
                 client.idle_done()
         except Exception as exc:
-            print(json.dumps({"event": "watch_error", "error": str(exc)[:500]}), file=sys.stderr, flush=True)
+            LOGGER.exception("watch_error")
             time.sleep(15)
+    LOGGER.info("watcher_stop")
     return 0
 
 

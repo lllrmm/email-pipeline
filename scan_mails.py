@@ -21,11 +21,13 @@ for candidate in (SCRIPT_DIR, SCRIPT_DIR / "src"):
         sys.path.insert(0, str(candidate))
 
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
+from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
 from email_pipeline.mail_identity import normalize_rfc_message_id  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 
 DEFAULT_CONFIG = SCRIPT_DIR / "daily-mail-pipeline.yaml"
 DEFAULT_OUTPUT_ROOT = Path.home() / ".hermes" / "email" / "daily"
+LOGGER = __import__("logging").getLogger("email_pipeline.scanner")
 
 
 def utc_now() -> str:
@@ -57,6 +59,7 @@ def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mai
         folders = mailboxes or [str(item[2]) for item in client.list_folders()]
         for folder in folders:
             try:
+                LOGGER.info("scan_folder_start folder=%s", folder)
                 selected = client.select_folder(folder, readonly=True)
                 uidvalidity = int(selected[b"UIDVALIDITY"])
                 uids = list(client.search(["SINCE", since, "BEFORE", before]))
@@ -79,8 +82,10 @@ def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mai
                         continue
                     folder_mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "received_at": utc_text(received_utc)})
                 mails.extend(folder_mails[-limit:])
+                LOGGER.info("scan_folder_done folder=%s matched=%d", folder, len(folder_mails[-limit:]))
             except Exception as exc:
                 failures.append({"folder": folder, "error": str(exc)[:500]})
+                LOGGER.exception("scan_folder_failed folder=%s", folder)
     return mails, failures, len(folders)
 
 
@@ -94,11 +99,14 @@ def main() -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     args = parser.parse_args()
+    global LOGGER
+    LOGGER = configure_daily_logger(args.output_root, "scanner")
     config = yaml.safe_load(args.config.expanduser().resolve().read_text(encoding="utf-8")) or {}
     start = parse_utc(args.from_time)
     end = parse_utc(args.to_time)
     if start >= end:
         raise RuntimeError("--from-time must be earlier than --to-time")
+    LOGGER.info("scan_start from_time=%s to_time=%s requested_mailboxes=%s", utc_text(start), utc_text(end), args.mailbox or "all")
     first = start.date()
     last = (end - dt.timedelta(microseconds=1)).date()
     days = [(first + dt.timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
@@ -118,6 +126,7 @@ def main() -> int:
         print(json.dumps({"ok": True, **per_day[0]}, ensure_ascii=False, indent=2))
     else:
         print(json.dumps({"ok": True, "mode": "range", "messages_total": total, "per_day": per_day}, ensure_ascii=False, indent=2))
+    LOGGER.info("scan_complete messages_total=%d mailboxes_total=%d failures=%d", total, mailbox_count, len(failures))
     return 0
 
 

@@ -27,6 +27,14 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertNotIn("DEEPSEEK_API_KEY", source)
         self.assertNotIn("call_model(", source)
 
+    def test_scanner_and_watcher_use_daily_logging(self) -> None:
+        scanner = (ROOT / "scan_mails.py").read_text(encoding="utf-8")
+        watcher = (ROOT / "watch_mails.py").read_text(encoding="utf-8")
+        self.assertIn("configure_daily_logger", scanner)
+        self.assertIn('"scanner"', scanner)
+        self.assertIn("configure_daily_logger", watcher)
+        self.assertIn('"watcher"', watcher)
+
     def test_scan_orchestrator_only_enqueues(self) -> None:
         source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")
         self.assertIn("enqueue_event", source)

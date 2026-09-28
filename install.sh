@@ -34,6 +34,7 @@ install -m 600 "$repo_dir/src/email_pipeline/mime_extract.py" "$package_dir/mime
 install -m 600 "$repo_dir/src/email_pipeline/daily_schema.py" "$package_dir/daily_schema.py"
 install -m 600 "$repo_dir/src/email_pipeline/mail_identity.py" "$package_dir/mail_identity.py"
 install -m 600 "$repo_dir/src/email_pipeline/imap_backend.py" "$package_dir/imap_backend.py"
+install -m 600 "$repo_dir/src/email_pipeline/daily_logging.py" "$package_dir/daily_logging.py"
 install -d -m 700 "$opencode_agent_dir"
 install -m 600 "$repo_dir/opencode/agents/mail-analyzer.md" "$opencode_agent_dir/mail-analyzer.md"
 install -m 600 "$repo_dir/opencode/agents/mail-daily-aggregator.md" "$opencode_agent_dir/mail-daily-aggregator.md"
@@ -72,7 +73,8 @@ python3 -m py_compile \
   "$package_dir/agent_tools.py" \
   "$package_dir/daily_schema.py" \
   "$package_dir/mail_identity.py" \
-  "$package_dir/imap_backend.py"
+  "$package_dir/imap_backend.py" \
+  "$package_dir/daily_logging.py"
 
 printf 'Installed read-only mail pipeline to %s\n' "$target"
 printf 'Existing YAML configuration was not modified.\n'
