@@ -87,6 +87,8 @@ Every per-email `summary.json` and daily `aggregation.json` has a top-level
 `generated_at` timestamp in UTC ISO 8601 format.
 The `aggregation.json` artifact also has a top-level `included_pipeline_ids`
 array containing the complete validated, de-duplicated input list in order.
+Python derives top-level `earliest_email_at` and `latest_email_at` UTC timestamps
+from those included messages; the aggregation agent does not generate them.
 
 The public daily timeline uses one `events` array. Each event contains its own
 `scheduled`, `deadlines`, and `actions` arrays. Every nested item has a required

@@ -32,14 +32,28 @@ class DailyAggregationTests(unittest.TestCase):
         artifact = MODULE.build_aggregation_artifact(
             daily_summary,
             pipeline_ids,
+            earliest_email_at="2026-09-24T20:00:00Z",
+            latest_email_at="2026-09-25T12:00:00Z",
             session_id="session-1",
             model="test-model",
             tools_used=["mail_validate_daily_summary"],
         )
 
         self.assertEqual(artifact["included_pipeline_ids"], pipeline_ids)
+        self.assertEqual(artifact["earliest_email_at"], "2026-09-24T20:00:00Z")
+        self.assertEqual(artifact["latest_email_at"], "2026-09-25T12:00:00Z")
         self.assertIs(artifact["daily_summary"], daily_summary)
         self.assertNotIn("included_pipeline_ids", daily_summary)
+
+    def test_email_time_bounds_compare_actual_instants(self) -> None:
+        earliest, latest = MODULE.email_time_bounds([
+            "2026-09-25T12:00:00+08:00",
+            "2026-09-25T05:00:00Z",
+            "not-a-date",
+        ])
+
+        self.assertEqual(earliest, "2026-09-25T04:00:00Z")
+        self.assertEqual(latest, "2026-09-25T05:00:00Z")
 
     def test_aggregation_timestamp_is_utc_iso8601(self) -> None:
         generated_at = MODULE.generated_at_utc()

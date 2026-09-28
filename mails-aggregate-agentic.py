@@ -31,10 +31,30 @@ def generated_at_utc() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def email_time_bounds(values: list[str]) -> tuple[str | None, str | None]:
+    parsed: list[dt.datetime] = []
+    for value in values:
+        try:
+            timestamp = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        if timestamp.tzinfo is None:
+            continue
+        parsed.append(timestamp.astimezone(dt.timezone.utc))
+    if not parsed:
+        return None, None
+    return (
+        min(parsed).isoformat().replace("+00:00", "Z"),
+        max(parsed).isoformat().replace("+00:00", "Z"),
+    )
+
+
 def build_aggregation_artifact(
     result: dict[str, Any],
     pipeline_ids: list[str],
     *,
+    earliest_email_at: str | None,
+    latest_email_at: str | None,
     session_id: str | None,
     model: str,
     tools_used: list[str],
@@ -44,6 +64,8 @@ def build_aggregation_artifact(
         "artifact_type": "mail_daily_summary",
         "generated_at": generated_at_utc(),
         "included_pipeline_ids": list(pipeline_ids),
+        "earliest_email_at": earliest_email_at,
+        "latest_email_at": latest_email_at,
         "processor": {
             "processor": "opencode",
             "session_id": session_id,
@@ -148,7 +170,8 @@ def parse_events(stdout: str) -> tuple[str | None, list[str], dict[str, Any] | N
     return session_id, list(dict.fromkeys(tools)), None
 
 
-def validate_pipeline_inputs(workdir: Path, pipeline_ids: list[str]) -> None:
+def validate_pipeline_inputs(workdir: Path, pipeline_ids: list[str]) -> list[str]:
+    sent_times: list[str] = []
     for pipeline_id in pipeline_ids:
         if len(pipeline_id) != 64 or any(char not in "0123456789abcdef" for char in pipeline_id):
             raise RuntimeError(f"invalid pipeline id: {pipeline_id}")
@@ -168,11 +191,16 @@ def validate_pipeline_inputs(workdir: Path, pipeline_ids: list[str]) -> None:
             raise RuntimeError(f"pipeline id is absent from database: {pipeline_id}")
         if identity.get("summarized") is not True:
             raise RuntimeError(f"pipeline id is not summarized: {pipeline_id}")
+        metadata = identity.get("metadata") or {}
+        sent_at = metadata.get("sent_at") or request.get("date")
+        if isinstance(sent_at, str) and sent_at.strip():
+            sent_times.append(sent_at.strip())
         if not summary_path.is_file():
             raise RuntimeError(f"summary.json missing: {pipeline_id}")
         artifact = json.loads(summary_path.read_text(encoding="utf-8"))
         if artifact.get("pipeline_id") != pipeline_id or not isinstance(artifact.get("analysis"), dict):
             raise RuntimeError(f"summary.json does not match pipeline id: {pipeline_id}")
+    return sent_times
 
 
 def main() -> int:
@@ -194,7 +222,8 @@ def main() -> int:
     if output_path.name != "aggregation.json" or output_path.parent != workdir:
         raise RuntimeError("aggregate output must be <agent-workdir>/aggregation.json")
     pipeline_ids = list(dict.fromkeys(args.pipeline_id_list))
-    validate_pipeline_inputs(workdir, pipeline_ids)
+    sent_times = validate_pipeline_inputs(workdir, pipeline_ids)
+    earliest_email_at, latest_email_at = email_time_bounds(sent_times)
     cfg = load_config(config_path)
     oc = cfg.get("opencode") or {}
     executable = str(oc.get("executable") or (Path.home() / ".opencode" / "bin" / "opencode"))
@@ -250,6 +279,8 @@ def main() -> int:
     output = build_aggregation_artifact(
         result,
         pipeline_ids,
+        earliest_email_at=earliest_email_at,
+        latest_email_at=latest_email_at,
         session_id=session_id,
         model=model,
         tools_used=tools_used,
