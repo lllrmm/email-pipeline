@@ -130,6 +130,7 @@ class MailIdentityIndex:
                     folder TEXT NOT NULL,
                     uidvalidity INTEGER NOT NULL,
                     imap_uid INTEGER NOT NULL,
+                    sent_at TEXT,
                     detected_at TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'done')),
                     attempts INTEGER NOT NULL DEFAULT 0,
@@ -155,6 +156,9 @@ class MailIdentityIndex:
                 connection.execute("ALTER TABLE email_location ADD COLUMN uidvalidity INTEGER")
             if "imap_uid" not in location_columns:
                 connection.execute("ALTER TABLE email_location ADD COLUMN imap_uid INTEGER")
+            queue_columns = {row["name"] for row in connection.execute("PRAGMA table_info(email_event_queue)").fetchall()}
+            if "sent_at" not in queue_columns:
+                connection.execute("ALTER TABLE email_event_queue ADD COLUMN sent_at TEXT")
             connection.commit()
         self.path.chmod(0o600)
 
@@ -390,16 +394,19 @@ class MailIdentityIndex:
                 raise KeyError(f"unknown pipeline id: {pipeline_id}")
             connection.commit()
 
-    def enqueue_event(self, *, account: str, rfc_message_id: str, folder: str, uidvalidity: int, uid: int) -> bool:
+    def enqueue_event(self, *, account: str, rfc_message_id: str, folder: str, uidvalidity: int, uid: int, sent_at: str | None = None, requeue: bool = False) -> bool:
         now = dt.datetime.now(dt.timezone.utc).isoformat()
         rfc_message_id = normalize_rfc_message_id(rfc_message_id)
         with closing(self.connect()) as connection:
             cursor = connection.execute(
                 """INSERT INTO email_event_queue
-                (account, rfc_message_id, folder, uidvalidity, imap_uid, detected_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(account, folder, uidvalidity, imap_uid) DO NOTHING""",
-                (account, rfc_message_id, folder, int(uidvalidity), int(uid), now),
+                (account, rfc_message_id, folder, uidvalidity, imap_uid, sent_at, detected_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(account, folder, uidvalidity, imap_uid) DO UPDATE SET
+                    sent_at=COALESCE(excluded.sent_at,email_event_queue.sent_at),
+                    status=CASE WHEN ? THEN 'pending' ELSE email_event_queue.status END,
+                    completed_at=CASE WHEN ? THEN NULL ELSE email_event_queue.completed_at END""",
+                (account, rfc_message_id, folder, int(uidvalidity), int(uid), sent_at, now, int(requeue), int(requeue)),
             )
             connection.commit()
         return cursor.rowcount == 1
