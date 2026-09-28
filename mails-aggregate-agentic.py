@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -58,6 +59,29 @@ def walk(value: Any):
             yield from walk(child)
 
 
+def parse_json_object(text: str) -> dict[str, Any] | None:
+    value = text.strip()
+    if value.startswith("```"):
+        first_newline = value.find("\n")
+        value = value[first_newline + 1:] if first_newline >= 0 else value
+        if value.rstrip().endswith("```"):
+            value = value.rstrip()[:-3].rstrip()
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+    start = value.find("{")
+    end = value.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        parsed = json.loads(value[start:end + 1])
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
 def parse_events(stdout: str) -> tuple[str | None, list[str], dict[str, Any] | None]:
     session_id = None
     tools: list[str] = []
@@ -78,11 +102,7 @@ def parse_events(stdout: str) -> tuple[str | None, list[str], dict[str, Any] | N
             if isinstance(item.get("text"), str):
                 candidates.append(item["text"])
     for text in reversed(candidates):
-        text = text.strip().removeprefix("```json").removesuffix("```").strip()
-        try:
-            result = json.loads(text)
-        except json.JSONDecodeError:
-            continue
+        result = parse_json_object(text)
         if isinstance(result, dict) and "overview" in result:
             return session_id, list(dict.fromkeys(tools)), result
     return session_id, list(dict.fromkeys(tools)), None
@@ -145,11 +165,13 @@ def main() -> int:
     model = str(oc.get("model") or "deepseek/deepseek-flash")
     timeout = int(oc.get("timeout_seconds") or 600)
     runtime_root = Path(oc.get("runtime_root") or (Path.home() / ".hermes" / "opencode-email-runtime")).expanduser().resolve()
-    runtime_home = runtime_root / "home"
     runtime_config = runtime_root / "config"
-    runtime_data = runtime_root / "data"
-    runtime_cache = runtime_root / "cache"
-    runtime_state = runtime_root / "state"
+    aggregate_id = hashlib.sha256(str(workdir).encode("utf-8")).hexdigest()[:16]
+    runtime_instance = runtime_root / "aggregations" / aggregate_id
+    runtime_home = runtime_instance / "home"
+    runtime_data = runtime_instance / "data"
+    runtime_cache = runtime_instance / "cache"
+    runtime_state = runtime_instance / "state"
     for path in (runtime_home, runtime_config / "opencode", runtime_data, runtime_cache, runtime_state):
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
 
@@ -161,6 +183,11 @@ def main() -> int:
     env["XDG_CACHE_HOME"] = str(runtime_cache)
     env["XDG_STATE_HOME"] = str(runtime_state)
     env["OPENCODE_CONFIG_DIR"] = str(runtime_config / "opencode")
+
+    run_dir = workdir / "aggregation-run"
+    run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for name in ("events.jsonl", "stderr.txt", "metadata.json"):
+        (run_dir / name).unlink(missing_ok=True)
 
     command = [
         executable, "run", "--format", "json",
@@ -174,6 +201,9 @@ def main() -> int:
         command, stdin=subprocess.DEVNULL, text=True, capture_output=True,
         timeout=timeout, env=env, check=False,
     )
+    secure_write(run_dir / "events.jsonl", completed.stdout)
+    if completed.stderr:
+        secure_write(run_dir / "stderr.txt", completed.stderr)
     session_id, tools_used, result = parse_events(completed.stdout)
     if completed.returncode != 0 or result is None:
         raise RuntimeError(f"daily aggregation failed: {completed.stderr[-1000:]} {completed.stdout[-1000:]}")
@@ -189,6 +219,13 @@ def main() -> int:
         },
         "daily_summary": result,
     }
+    secure_write(run_dir / "metadata.json", json.dumps({
+        "session_id": session_id,
+        "model": model,
+        "tools_used": tools_used,
+        "returncode": completed.returncode,
+        "pipeline_ids": pipeline_ids,
+    }, ensure_ascii=False, indent=2))
     secure_write(output_path, json.dumps(output, ensure_ascii=False, indent=2))
     print(json.dumps({"ok": True, "summary_path": str(output_path), "session_id": session_id}, ensure_ascii=False))
     return 0

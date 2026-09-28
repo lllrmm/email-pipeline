@@ -38,6 +38,7 @@ class StageBoundaryTests(unittest.TestCase):
         source = (ROOT / "summarize-mail-agentic.py").read_text(encoding="utf-8")
         self.assertNotIn("output_path.name", source)
         self.assertIn("workspace not in output_path.parents", source)
+        self.assertIn('runtime_root / "sessions" / pipeline_id', source)
 
     def test_orchestrator_has_no_provider_or_parser_dependency(self) -> None:
         source = (ROOT / "daily-mail-pipeline.py").read_text(encoding="utf-8")

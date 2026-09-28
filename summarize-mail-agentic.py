@@ -134,13 +134,7 @@ def main() -> int:
         opencode_cfg.get("runtime_root")
         or (Path.home() / ".hermes" / "opencode-email-runtime")
     ).expanduser().resolve()
-    runtime_home = runtime_root / "home"
     runtime_config = runtime_root / "config"
-    runtime_data = runtime_root / "data"
-    runtime_cache = runtime_root / "cache"
-    runtime_state = runtime_root / "state"
-    for path in (runtime_home, runtime_config / "opencode", runtime_data, runtime_cache, runtime_state):
-        path.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     workspace = args.agent_workdir.expanduser().resolve()
     output_path = args.output.expanduser().resolve()
@@ -153,9 +147,18 @@ def main() -> int:
         raise RuntimeError("pipeline_id does not match request.json")
     if output_path != workspace and workspace not in output_path.parents:
         raise RuntimeError("output path must stay inside the agent work directory")
+    runtime_instance = runtime_root / "sessions" / pipeline_id
+    runtime_home = runtime_instance / "home"
+    runtime_data = runtime_instance / "data"
+    runtime_cache = runtime_instance / "cache"
+    runtime_state = runtime_instance / "state"
+    for path in (runtime_home, runtime_config / "opencode", runtime_data, runtime_cache, runtime_state):
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
     run_id = f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
     run_dir = workspace / "opencode-run"
     run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for name in ("events.jsonl", "stderr.txt", "metadata.json", "timeout.txt"):
+        (run_dir / name).unlink(missing_ok=True)
 
     prompt = (
         "Process the single email authorized by request.json. "
@@ -204,7 +207,7 @@ def main() -> int:
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
-        secure_write(workspace / "opencode-timeout.txt", str(exc))
+        secure_write(run_dir / "timeout.txt", str(exc))
         raise RuntimeError(f"OpenCode timed out after {timeout}s") from exc
 
     secure_write(run_dir / "events.jsonl", completed.stdout)

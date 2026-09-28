@@ -12,11 +12,6 @@ opencode_email_config_dir="$hermes_home/opencode-email-runtime/config/opencode"
 
 install -d -m 700 "$script_dir"
 
-if [[ -f "$target" ]]; then
-  cp -p "$target" "$target.bak-pre-mime-v2"
-  chmod 600 "$target.bak-pre-mime-v2"
-fi
-
 install -m 700 "$repo_dir/daily-mail-pipeline.py" "$target"
 install -m 700 "$repo_dir/index-mail.py" "$script_dir/index-mail.py"
 install -m 700 "$repo_dir/mail-index.py" "$script_dir/mail-index.py"

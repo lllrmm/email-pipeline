@@ -17,6 +17,10 @@ SPEC.loader.exec_module(MODULE)
 
 
 class DailyAggregationTests(unittest.TestCase):
+    def test_parser_extracts_json_from_surrounding_text(self) -> None:
+        value = MODULE.parse_json_object('Result follows:\n```json\n{"overview":"ok"}\n```')
+        self.assertEqual(value, {"overview": "ok"})
+
     def test_valid_agent_output_is_preserved_verbatim(self) -> None:
         result = {
             "date": "2026-09-25",
