@@ -18,6 +18,29 @@ SPEC.loader.exec_module(MODULE)
 
 
 class DailyAggregationTests(unittest.TestCase):
+    def test_aggregation_artifact_records_every_input_pipeline_id(self) -> None:
+        pipeline_ids = ["a" * 64, "b" * 64]
+        daily_summary = {
+            "date": "2026-09-25",
+            "overview": "overview",
+            "events": [],
+            "warnings": [],
+            "messages_total": 2,
+            "messages_requiring_review": 0,
+        }
+
+        artifact = MODULE.build_aggregation_artifact(
+            daily_summary,
+            pipeline_ids,
+            session_id="session-1",
+            model="test-model",
+            tools_used=["mail_validate_daily_summary"],
+        )
+
+        self.assertEqual(artifact["input_pipeline_ids"], pipeline_ids)
+        self.assertIs(artifact["daily_summary"], daily_summary)
+        self.assertNotIn("input_pipeline_ids", daily_summary)
+
     def test_aggregation_timestamp_is_utc_iso8601(self) -> None:
         generated_at = MODULE.generated_at_utc()
 

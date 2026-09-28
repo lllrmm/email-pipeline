@@ -85,6 +85,8 @@ links, images, and attachment inventories.
 
 Every per-email `summary.json` and daily `aggregation.json` has a top-level
 `generated_at` timestamp in UTC ISO 8601 format.
+The `aggregation.json` artifact also has a top-level `input_pipeline_ids`
+array containing the complete validated, de-duplicated input list in order.
 
 The public daily timeline uses one `events` array. Each event contains its own
 `scheduled`, `deadlines`, and `actions` arrays. Every nested item has a required
@@ -133,7 +135,6 @@ Himalaya IDs are not part of this interface.
 │       └── opencode-run/
 │           ├── events.jsonl
 │           └── metadata.json
-├── pipeline-id-list.json
 ├── aggregation.json
 ├── bundle.json
 ```

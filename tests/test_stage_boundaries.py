@@ -49,6 +49,12 @@ class StageBoundaryTests(unittest.TestCase):
     def test_removed_intermediate_summary_script_stays_removed(self) -> None:
         self.assertFalse((ROOT / "summarize-mail.py").exists())
 
+    def test_aggregation_does_not_materialize_pipeline_id_list(self) -> None:
+        source = (ROOT / "mails-aggregate-agentic.py").read_text(encoding="utf-8")
+
+        self.assertNotIn('workdir / "pipeline-id-list.json"', source)
+        self.assertIn("INPUT_PIPELINE_IDS_JSON", source)
+
     def test_compatibility_bundle_joins_matching_artifacts(self) -> None:
         orchestrator = load_script("daily_orchestrator", ROOT / "daily-mail-pipeline.py")
         with tempfile.TemporaryDirectory() as temp_dir:

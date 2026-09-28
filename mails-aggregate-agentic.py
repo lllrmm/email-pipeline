@@ -31,6 +31,29 @@ def generated_at_utc() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def build_aggregation_artifact(
+    result: dict[str, Any],
+    pipeline_ids: list[str],
+    *,
+    session_id: str | None,
+    model: str,
+    tools_used: list[str],
+) -> dict[str, Any]:
+    return {
+        "schema_version": 3,
+        "artifact_type": "mail_daily_summary",
+        "generated_at": generated_at_utc(),
+        "input_pipeline_ids": list(pipeline_ids),
+        "processor": {
+            "processor": "opencode",
+            "session_id": session_id,
+            "model": model,
+            "tools_used": tools_used,
+        },
+        "daily_summary": result,
+    }
+
+
 def secure_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -172,10 +195,6 @@ def main() -> int:
         raise RuntimeError("aggregate output must be <agent-workdir>/aggregation.json")
     pipeline_ids = list(dict.fromkeys(args.pipeline_id_list))
     validate_pipeline_inputs(workdir, pipeline_ids)
-    secure_write(workdir / "pipeline-id-list.json", json.dumps({
-        "date": workdir.name,
-        "pipeline_ids": pipeline_ids,
-    }, ensure_ascii=False, indent=2))
     cfg = load_config(config_path)
     oc = cfg.get("opencode") or {}
     executable = str(oc.get("executable") or (Path.home() / ".opencode" / "bin" / "opencode"))
@@ -206,13 +225,16 @@ def main() -> int:
     for name in ("events.jsonl", "stderr.txt", "metadata.json"):
         (run_dir / name).unlink(missing_ok=True)
 
+    input_ids_json = json.dumps(pipeline_ids, ensure_ascii=False, separators=(",", ":"))
     command = [
         executable, "run", "--format", "json",
         "--agent", "mail-daily-aggregator",
         "--model", model,
         "--dir", str(workdir),
         "--title", f"mail-daily:{workdir.name}",
-        "Read pipeline-id-list.json and each emails/<pipeline_id>/summary.json, then return the required compact daily JSON digest.",
+        "The exact validated aggregation input is INPUT_PIPELINE_IDS_JSON="
+        f"{input_ids_json}. Read only emails/<pipeline_id>/summary.json for those IDs, "
+        "then return the required compact daily JSON digest.",
     ]
     completed = subprocess.run(
         command, stdin=subprocess.DEVNULL, text=True, capture_output=True,
@@ -225,18 +247,13 @@ def main() -> int:
     if completed.returncode != 0 or result is None:
         raise RuntimeError(f"daily aggregation failed: {completed.stderr[-1000:]} {completed.stdout[-1000:]}")
     validate_daily_summary(result)
-    output = {
-        "schema_version": 3,
-        "artifact_type": "mail_daily_summary",
-        "generated_at": generated_at_utc(),
-        "processor": {
-            "processor": "opencode",
-            "session_id": session_id,
-            "model": model,
-            "tools_used": tools_used,
-        },
-        "daily_summary": result,
-    }
+    output = build_aggregation_artifact(
+        result,
+        pipeline_ids,
+        session_id=session_id,
+        model=model,
+        tools_used=tools_used,
+    )
     secure_write(run_dir / "metadata.json", json.dumps({
         "session_id": session_id,
         "model": model,

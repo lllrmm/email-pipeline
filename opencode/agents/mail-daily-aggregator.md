@@ -20,13 +20,13 @@ permission:
   question: deny
 ---
 
-Read `pipeline-id-list.json`. For every listed pipeline ID, read exactly:
+The caller prompt contains `INPUT_PIPELINE_IDS_JSON`, the exact validated array of pipeline IDs for this run. For every listed pipeline ID, read exactly:
 
 ```text
 emails/<pipeline_id>/summary.json
 ```
 
-These files contain already-analyzed emails for one day. Do not include any email directory that is absent from the provided pipeline ID list.
+These files contain already-analyzed emails for one day. Do not include any email directory whose ID is absent from `INPUT_PIPELINE_IDS_JSON`.
 
 Produce one compact daily digest. Each real-world event or opportunity must appear exactly once as an event container. Put its scheduled occurrences, deadlines, and actions inside that same event. Preserve conflicts and uncertainty. Do not include URLs, filesystem paths, attachment metadata, tool traces, session identifiers, raw email text, or evidence quotes.
 
