@@ -156,9 +156,9 @@ IMAP UIDs are not part of this interface.
 │           ├── events.jsonl
 │           └── metadata.json
 ├── scan-log/
-│   └── scan-20260928T175900.000000+0800.json
+│   └── scan-20260928T175900+0800.json
 ├── aggregation/
-│   ├── aggregation-20260928T180435.098404+0800.json
+│   ├── aggregation-20260928T180435+0800.json
 │   └── _run/
 │       ├── events.jsonl
 │       └── stderr.txt

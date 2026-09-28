@@ -19,7 +19,7 @@ def now() -> dt.datetime:
 def format_rfc3339(value: dt.datetime) -> str:
     if value.tzinfo is None:
         raise ValueError("datetime must be timezone-aware")
-    return value.astimezone(timezone()).isoformat()
+    return value.astimezone(timezone()).isoformat(timespec="seconds")
 
 def now_rfc3339() -> str:
     return format_rfc3339(now())
@@ -34,4 +34,4 @@ def parse_rfc3339(value: str) -> dt.datetime:
 def filename_timestamp(value: dt.datetime) -> str:
     """Return a filesystem-safe timestamp in the configured timezone."""
     localized = value.astimezone(timezone())
-    return localized.strftime("%Y%m%dT%H%M%S.%f%z")
+    return localized.strftime("%Y%m%dT%H%M%S%z")

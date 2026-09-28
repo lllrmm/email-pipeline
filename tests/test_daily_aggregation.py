@@ -62,6 +62,7 @@ class DailyAggregationTests(unittest.TestCase):
         generated_at = MODULE.generated_at()
 
         self.assertTrue(generated_at.endswith("+08:00"))
+        self.assertNotIn(".", generated_at)
         parsed = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
         self.assertEqual(parsed.utcoffset(), dt.timedelta(hours=8))
 
@@ -69,7 +70,7 @@ class DailyAggregationTests(unittest.TestCase):
         configure_program_timezone("Asia/Hong_Kong")
         filename = MODULE.aggregation_filename("2026-09-28T10:04:35.098404Z")
 
-        self.assertEqual(filename, "aggregation-20260928T180435.098404+0800.json")
+        self.assertEqual(filename, "aggregation-20260928T180435+0800.json")
 
     def test_parser_extracts_json_from_surrounding_text(self) -> None:
         value = MODULE.parse_json_object('Result follows:\n```json\n{"overview":"ok"}\n```')

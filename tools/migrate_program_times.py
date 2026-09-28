@@ -45,7 +45,7 @@ def convert(value: str, timezone: ZoneInfo) -> str:
     parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         raise ValueError("timestamp has no timezone offset")
-    return parsed.astimezone(timezone).isoformat()
+    return parsed.astimezone(timezone).isoformat(timespec="seconds")
 
 
 def rewrite_json_value(value: Any, timezone: ZoneInfo) -> int:

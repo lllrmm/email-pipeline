@@ -25,7 +25,7 @@ class MailIdentityTests(unittest.TestCase):
         configure_program_timezone("Asia/Hong_Kong")
         filename = SCAN_MAILS.scan_log_filename("2026-09-28T10:04:35.098404Z")
 
-        self.assertEqual(filename, "scan-20260928T180435.098404+0800.json")
+        self.assertEqual(filename, "scan-20260928T180435+0800.json")
 
     def test_existing_database_is_migrated_with_metadata_table(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -188,6 +188,7 @@ class MailIdentityTests(unittest.TestCase):
 
             self.assertEqual(len(claimed), 1)
             self.assertTrue(stored["claimed_at"].endswith("+08:00"))
+            self.assertNotIn(".", stored["claimed_at"])
 
 
 if __name__ == "__main__":

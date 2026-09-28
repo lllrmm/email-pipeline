@@ -68,6 +68,7 @@ class OpenCodeMailChainTests(unittest.TestCase):
         generated_at = OPENCODE_MAIL.generated_at()
 
         self.assertTrue(generated_at.endswith("+08:00"))
+        self.assertNotIn(".", generated_at)
         parsed = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
         self.assertEqual(parsed.utcoffset(), dt.timedelta(hours=8))
 

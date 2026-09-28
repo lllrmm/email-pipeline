@@ -426,7 +426,7 @@ class MailIdentityIndex:
 
     def claim_events(self, limit: int = 20, stale_seconds: int = 900) -> list[dict[str, Any]]:
         current_time = program_now()
-        stale = (current_time - dt.timedelta(seconds=stale_seconds)).isoformat()
+        stale = (current_time - dt.timedelta(seconds=stale_seconds)).isoformat(timespec="seconds")
         with closing(self.connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
@@ -442,7 +442,7 @@ class MailIdentityIndex:
                 placeholders = ",".join("?" for _ in ids)
                 connection.execute(
                     f"UPDATE email_event_queue SET status='processing', attempts=attempts+1, claimed_at=?, last_error=NULL WHERE queue_id IN ({placeholders})",
-                    (current_time.isoformat(), *ids),
+                    (current_time.isoformat(timespec="seconds"), *ids),
                 )
             connection.commit()
         return [dict(row) for row in rows]
@@ -497,7 +497,8 @@ class MailIdentityIndex:
             locations = connection.execute(
                 """
                 SELECT account, folder, uidvalidity, imap_uid, observed_date, last_seen
-                FROM email_location WHERE pipeline_id=? ORDER BY last_seen DESC
+                FROM email_location WHERE pipeline_id=?
+                ORDER BY last_seen DESC, imap_uid IS NULL, imap_uid DESC
                 """,
                 (value,),
             ).fetchall()
