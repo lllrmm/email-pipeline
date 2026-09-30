@@ -11,8 +11,8 @@ email-pipeline init
 ```
 
 This initializes the current directory itself. Its `instance.toml`, `config/`,
-and `data/` contain that instance's configuration, database, logs, locks, and
-workspaces. There is no machine-wide instance registry.
+database, logs, locks, and workspaces are all instance-local. There is no
+machine-wide instance registry.
 Run all subsequent commands from the initialized directory; multiple directories
 can run independently on the same machine.
 

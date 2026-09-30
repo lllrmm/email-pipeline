@@ -5,14 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/email-pipeline-code
+WorkingDirectory=%h/email-pipeline
 ExecStart=/usr/bin/python3 %h/email-pipeline-code/email-pipeline.py consume
 Restart=always
 RestartSec=15
 Environment=PYTHONUNBUFFERED=1
 Environment=EMAIL_PIPELINE_CODE_ROOT=%h/email-pipeline-code
-Environment=EMAIL_PIPELINE_CONFIG_ROOT=%h/.email-pipeline
-Environment=EMAIL_PIPELINE_DATA_ROOT=%h/email-pipeline
+Environment=EMAIL_PIPELINE_INSTANCE_ROOT=%h/email-pipeline
 
 [Install]
 WantedBy=default.target

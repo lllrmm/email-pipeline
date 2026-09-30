@@ -45,7 +45,7 @@ def config_root() -> Path:
 def data_root() -> Path:
     root = instance_root()
     if root is not None and not os.environ.get(DATA_ROOT_ENV):
-        return root / "data"
+        return root
     return _root(DATA_ROOT_ENV, DEFAULT_DATA_ROOT)
 
 
