@@ -329,7 +329,7 @@ def command_inspect_link(workspace: Path, link_id: str) -> dict[str, Any]:
     redirects: list[str] = []
     session = requests.Session()
     session.trust_env = False
-    session.headers.update({"User-Agent": "Hermes-Mail-Link-Inspector/1.0", "Accept": "text/html,text/plain,application/json"})
+    session.headers.update({"User-Agent": "Email-Pipeline-Link-Inspector/1.0", "Accept": "text/html,text/plain,application/json"})
     response = None
     for _ in range(4):
         validate_public_https(current_url)

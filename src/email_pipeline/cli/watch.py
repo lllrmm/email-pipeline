@@ -18,10 +18,16 @@ from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, normalize_rfc_message_id  # noqa: E402
 from email_pipeline.paths import daily_root, database_path as default_database_path  # noqa: E402
+from email_pipeline.process_lock import ProcessLock  # noqa: E402
 
 CONFIG_PATH = default_config_path()
 STOP = False
 LOGGER = __import__("logging").getLogger("email_pipeline.watcher")
+
+
+def configure_watcher_logger(timezone_name: str = "UTC") -> None:
+    global LOGGER
+    LOGGER = configure_daily_logger(daily_root(), "watcher", timezone_name)
 
 
 def stop(*_args) -> None:
@@ -72,44 +78,57 @@ def event_mails(client, changes: dict[str, tuple[int, int, int]]) -> list[dict]:
 def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
-    config = load_config(config_path)
-    boundary_timezone = str(config.get("timezone") or "UTC")
-    configure_program_timezone(boundary_timezone)
-    global LOGGER
-    LOGGER = configure_daily_logger(daily_root(), "watcher", boundary_timezone)
-    watch = config.get("watcher") or {}
-    poll_seconds = max(15, int(watch.get("poll_seconds") or 60))
-    debounce_seconds = max(1, int(watch.get("debounce_seconds") or 10))
-    identity = config.get("identity") or {}
-    account = str(identity.get("account") or "outlook")
-    database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
-    index = MailIdentityIndex(database)
-    previous = index.load_watch_snapshot(account)
-    LOGGER.info("watcher_start mode=all_folder_uidnext_poll poll_seconds=%d debounce_seconds=%d", poll_seconds, debounce_seconds)
-    while not STOP:
-        try:
-            with connect_imap(config) as client:
-                folders = [str(item[2]) for item in client.list_folders()]
-                current = folder_snapshot(client, folders)
-                changes = new_uid_ranges(previous, current) if previous else {}
-                if changes:
-                    time.sleep(debounce_seconds)
-                    mails = event_mails(client, changes)
-                    inserted = 0
-                    for mail in mails:
-                        inserted += int(index.enqueue_event(account=account, rfc_message_id=mail["rfc_message_id"], folder=mail["folder"], uidvalidity=mail["uidvalidity"], uid=mail["uid"], received_at=mail.get("received_at")))
-                    if mails:
-                        LOGGER.info("enqueued detected=%d inserted=%d changed_folders=%s", len(mails), inserted, sorted(changes))
-                previous = current
-                index.replace_watch_snapshot(account, current)
-        except Exception as exc:
-            LOGGER.exception("watch_error")
-            time.sleep(15)
-            continue
-        time.sleep(poll_seconds)
-    LOGGER.info("watcher_stop")
-    return 0
+    configure_watcher_logger()
+    try:
+        with ProcessLock("watcher"):
+            return _run_watcher()
+    except Exception:
+        LOGGER.exception("watcher_failed")
+        return 1
+
+
+def _run_watcher() -> int:
+    try:
+        config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
+        config = load_config(config_path)
+        boundary_timezone = str(config.get("timezone") or "UTC")
+        configure_program_timezone(boundary_timezone)
+        configure_watcher_logger(boundary_timezone)
+        watch = config.get("watcher") or {}
+        poll_seconds = max(15, int(watch.get("poll_seconds") or 60))
+        debounce_seconds = max(1, int(watch.get("debounce_seconds") or 10))
+        identity = config.get("identity") or {}
+        account = str(identity.get("account") or "outlook")
+        database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
+        index = MailIdentityIndex(database)
+        previous = index.load_watch_snapshot(account)
+        LOGGER.info("watcher_start mode=all_folder_uidnext_poll poll_seconds=%d debounce_seconds=%d", poll_seconds, debounce_seconds)
+        while not STOP:
+            try:
+                with connect_imap(config) as client:
+                    folders = [str(item[2]) for item in client.list_folders()]
+                    current = folder_snapshot(client, folders)
+                    changes = new_uid_ranges(previous, current) if previous else {}
+                    if changes:
+                        time.sleep(debounce_seconds)
+                        mails = event_mails(client, changes)
+                        inserted = 0
+                        for mail in mails:
+                            inserted += int(index.enqueue_event(account=account, rfc_message_id=mail["rfc_message_id"], folder=mail["folder"], uidvalidity=mail["uidvalidity"], uid=mail["uid"], received_at=mail.get("received_at")))
+                        if mails:
+                            LOGGER.info("enqueued detected=%d inserted=%d changed_folders=%s", len(mails), inserted, sorted(changes))
+                    previous = current
+                    index.replace_watch_snapshot(account, current)
+            except Exception:
+                LOGGER.exception("watch_error")
+                time.sleep(15)
+                continue
+            time.sleep(poll_seconds)
+        LOGGER.info("watcher_stop")
+        return 0
+    except Exception:
+        LOGGER.exception("watcher_failed")
+        return 1
 
 
 if __name__ == "__main__":

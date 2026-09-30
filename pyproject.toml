@@ -1,7 +1,7 @@
 [project]
-name = "hermes-email-pipeline"
+name = "email-pipeline"
 version = "0.1.0"
-description = "Read-only MIME and attachment extraction for Hermes Agent"
+description = "Read-only MIME and attachment extraction and email processing pipeline"
 requires-python = ">=3.11"
 dependencies = ["requests>=2.31"]
 

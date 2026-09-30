@@ -30,7 +30,7 @@ class StageBoundaryTests(unittest.TestCase):
     def test_scanner_and_watcher_use_daily_logging(self) -> None:
         scanner = (ROOT / "src/email_pipeline/cli/scan.py").read_text(encoding="utf-8")
         watcher = (ROOT / "src/email_pipeline/cli/watch.py").read_text(encoding="utf-8")
-        self.assertIn("configure_daily_logger", scanner)
+        self.assertIn("configure_run_logger", scanner)
         self.assertIn('"scanner"', scanner)
         self.assertIn("configure_daily_logger", watcher)
         self.assertIn('"watcher"', watcher)

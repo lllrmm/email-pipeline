@@ -55,3 +55,33 @@ def configure_daily_logger(output_root: Path, component: str, timezone_name: str
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     return logger
+
+
+def configure_run_logger(output_root: Path, component: str, timezone_name: str) -> logging.Logger:
+    """Configure a logger writing one immutable file for this process run."""
+    timezone = ZoneInfo(timezone_name)
+    logger = logging.getLogger(f"email_pipeline.{component}")
+    logger.setLevel(logging.INFO)
+    for old_handler in logger.handlers:
+        old_handler.close()
+        old_path = getattr(old_handler, "baseFilename", None)
+        if old_path:
+            try:
+                Path(old_path).unlink()
+            except FileNotFoundError:
+                pass
+    logger.handlers.clear()
+    logger.propagate = False
+    now = dt.datetime.now(timezone)
+    run_id = f"{now.strftime('%Y%m%dT%H%M%S%z')}-{os.getpid()}"
+    logs_root = output_root.expanduser().resolve() / now.date().isoformat() / "logs" / component
+    logs_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    logs_root.chmod(0o700)
+    path = logs_root / f"{component}-{run_id}.log"
+    path.touch(mode=0o600, exist_ok=False)
+    path.chmod(0o600)
+    handler = logging.FileHandler(path, encoding="utf-8", delay=True)
+    formatter = ZonedFormatter(timezone)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger

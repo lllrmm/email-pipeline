@@ -1,12 +1,12 @@
 [Unit]
-Description=Hermes durable new-mail queue consumer
-After=network-online.target hermes-email-watch.service
+Description=Email pipeline IMAPClient new-mail watcher
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=%h/email-pipeline-code
-ExecStart=/usr/bin/python3 %h/email-pipeline-code/email-pipeline.py consume
+ExecStart=/usr/bin/python3 %h/email-pipeline-code/email-pipeline.py watch
 Restart=always
 RestartSec=15
 Environment=PYTHONUNBUFFERED=1

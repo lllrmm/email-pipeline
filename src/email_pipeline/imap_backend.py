@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Iterator
 from .paths import token_refresh_path
 
+IMAP_SOCKET_TIMEOUT_SECONDS = 60
+
 def imap_config(config: dict[str, Any]) -> dict[str, Any]:
     value = config.get("imap") or {}
     return {
@@ -33,7 +35,13 @@ def connect_imap(config: dict[str, Any]) -> Iterator[Any]:
     cfg = imap_config(config)
     if not cfg["username"]:
         raise RuntimeError("imap.username is required")
-    client = IMAPClient(cfg["host"], port=cfg["port"], ssl=cfg["ssl"], use_uid=True)
+    client = IMAPClient(
+        cfg["host"],
+        port=cfg["port"],
+        ssl=cfg["ssl"],
+        use_uid=True,
+        timeout=IMAP_SOCKET_TIMEOUT_SECONDS,
+    )
     try:
         client.oauth2_login(cfg["username"], access_token(cfg["token_command"]))
         yield client

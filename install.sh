@@ -20,8 +20,8 @@ cp -R "$repo_dir/src/email_pipeline" "$package_dir"
 find "$package_dir" -type d -exec chmod 700 {} +
 find "$package_dir" -type f -exec chmod 600 {} +
 install -m 700 "$repo_dir/email-pipeline.py" "$code_root/email-pipeline.py"
-install -m 600 "$repo_dir/hermes-email-watch.service" "$service_dir/hermes-email-watch.service"
-install -m 600 "$repo_dir/hermes-email-queue.service" "$service_dir/hermes-email-queue.service"
+install -m 600 "$repo_dir/email-pipeline-watch.service" "$service_dir/email-pipeline-watch.service"
+install -m 600 "$repo_dir/email-pipeline-queue.service" "$service_dir/email-pipeline-queue.service"
 
 if [[ ! -f "$config_root/daily-mail-pipeline.toml" ]]; then
   install -m 600 "$repo_dir/daily-mail-pipeline.toml.example" "$config_root/daily-mail-pipeline.toml"

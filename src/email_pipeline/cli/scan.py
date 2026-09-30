@@ -16,14 +16,20 @@ from zoneinfo import ZoneInfo
 
 from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
-from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
+from email_pipeline.daily_logging import configure_run_logger  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import normalize_rfc_message_id  # noqa: E402
 from email_pipeline.paths import daily_root  # noqa: E402
+from email_pipeline.process_lock import ProcessLock  # noqa: E402
 
 DEFAULT_CONFIG = default_config_path()
 DEFAULT_OUTPUT_ROOT = daily_root()
 LOGGER = __import__("logging").getLogger("email_pipeline.scanner")
+
+
+def configure_scanner_logger(output_root: Path, timezone_name: str = "UTC") -> None:
+    global LOGGER
+    LOGGER = configure_run_logger(output_root, "scanner", timezone_name)
 
 
 def parse_utc(value: str) -> dt.datetime:
@@ -86,33 +92,46 @@ def main() -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     args = parser.parse_args()
-    config = load_config(args.config.expanduser().resolve())
-    boundary_timezone = str(config.get("timezone") or "UTC")
-    configure_program_timezone(boundary_timezone)
-    global LOGGER
-    LOGGER = configure_daily_logger(args.output_root, "scanner", boundary_timezone)
-    start = parse_utc(args.from_time)
-    end = parse_utc(args.to_time)
-    if start >= end:
-        raise RuntimeError("--from-time must be earlier than --to-time")
-    LOGGER.info("scan_start from_time=%s to_time=%s requested_mailboxes=%s", utc_text(start), utc_text(end), args.mailbox or "all")
-    boundary = ZoneInfo(boundary_timezone)
-    first = start.astimezone(boundary).date()
-    last = (end - dt.timedelta(microseconds=1)).astimezone(boundary).date()
-    days = [(first + dt.timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
-    mails, failures, mailbox_count = scan_range(config, start, end, args.mailbox, args.limit_per_mailbox)
-    per_day = []
-    total = 0
-    for day in days:
-        day_mails = [mail for mail in mails if parse_utc(str(mail["received_at"])).astimezone(boundary).date().isoformat() == day]
-        per_day.append({"date": day, "messages_total": len(day_mails), "mails": day_mails, "rfc_message_ids": [item["rfc_message_id"] for item in day_mails], "mailboxes_total": mailbox_count, "mailboxes_failed": failures})
-        total += len(day_mails)
-    if len(per_day) == 1:
-        print(json.dumps({"ok": True, **per_day[0]}, ensure_ascii=False, indent=2))
-    else:
-        print(json.dumps({"ok": True, "mode": "range", "messages_total": total, "per_day": per_day}, ensure_ascii=False, indent=2))
-    LOGGER.info("scan_complete messages_total=%d mailboxes_total=%d failures=%d", total, mailbox_count, len(failures))
-    return 0
+    configure_scanner_logger(args.output_root)
+    try:
+        with ProcessLock("scanner"):
+            return _run_scan(args)
+    except Exception:
+        LOGGER.exception("scan_failed")
+        return 1
+
+
+def _run_scan(args: argparse.Namespace) -> int:
+    try:
+        config = load_config(args.config.expanduser().resolve())
+        boundary_timezone = str(config.get("timezone") or "UTC")
+        configure_program_timezone(boundary_timezone)
+        configure_scanner_logger(args.output_root, boundary_timezone)
+        start = parse_utc(args.from_time)
+        end = parse_utc(args.to_time)
+        if start >= end:
+            raise RuntimeError("--from-time must be earlier than --to-time")
+        LOGGER.info("scan_start from_time=%s to_time=%s requested_mailboxes=%s", utc_text(start), utc_text(end), args.mailbox or "all")
+        boundary = ZoneInfo(boundary_timezone)
+        first = start.astimezone(boundary).date()
+        last = (end - dt.timedelta(microseconds=1)).astimezone(boundary).date()
+        days = [(first + dt.timedelta(days=i)).isoformat() for i in range((last - first).days + 1)]
+        mails, failures, mailbox_count = scan_range(config, start, end, args.mailbox, args.limit_per_mailbox)
+        per_day = []
+        total = 0
+        for day in days:
+            day_mails = [mail for mail in mails if parse_utc(str(mail["received_at"])).astimezone(boundary).date().isoformat() == day]
+            per_day.append({"date": day, "messages_total": len(day_mails), "mails": day_mails, "rfc_message_ids": [item["rfc_message_id"] for item in day_mails], "mailboxes_total": mailbox_count, "mailboxes_failed": failures})
+            total += len(day_mails)
+        if len(per_day) == 1:
+            print(json.dumps({"ok": True, **per_day[0]}, ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps({"ok": True, "mode": "range", "messages_total": total, "per_day": per_day}, ensure_ascii=False, indent=2))
+        LOGGER.info("scan_complete messages_total=%d mailboxes_total=%d failures=%d", total, mailbox_count, len(failures))
+        return 0
+    except Exception:
+        LOGGER.exception("scan_failed")
+        return 1
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Migrate an existing Hermes mail pipeline config without printing secrets."""
+"""Migrate an existing email-pipeline config without printing secrets."""
 
 from __future__ import annotations
 
