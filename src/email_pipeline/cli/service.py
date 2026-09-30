@@ -33,7 +33,8 @@ def unit_text(root: Path, component: str, watch_name: str) -> str:
         "Restart=always\nRestartSec=15\n"
         "Environment=PYTHONUNBUFFERED=1\n"
         f"Environment=EMAIL_PIPELINE_CODE_ROOT={code_root()}\n"
-        f"Environment=EMAIL_PIPELINE_INSTANCE_ROOT={root}\n\n"
+        f"Environment=EMAIL_PIPELINE_INSTANCE_ROOT={root}\n"
+        f"Environment=PYTHONPATH={code_root() / 'src'}:{code_root() / 'vendor'}\n\n"
         "[Install]\nWantedBy=default.target\n"
     )
 
