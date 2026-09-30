@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 from email import policy
 from email.parser import BytesParser
@@ -12,7 +13,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from email_pipeline.config import load_config  # noqa: E402
-from email_pipeline.daily_logging import configure_run_logger  # noqa: E402
+from email_pipeline.daily_logging import configure_run_logger, parse_log_level  # noqa: E402
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, normalize_rfc_message_id  # noqa: E402
 from email_pipeline.paths import database_path as default_database_path  # noqa: E402
@@ -22,9 +23,9 @@ from email_pipeline.program_time import configure_program_timezone, format_rfc33
 LOGGER = logging.getLogger("email_pipeline.scanner")
 
 
-def configure_scanner_logger(output_root: Path, timezone_name: str = "UTC") -> None:
+def configure_scanner_logger(output_root: Path, timezone_name: str = "UTC", file_level: int = logging.INFO) -> None:
     global LOGGER
-    LOGGER = configure_run_logger(output_root, "scanner", timezone_name)
+    LOGGER = configure_run_logger(output_root, "scanner", timezone_name, file_level, logging.ERROR)
 
 
 def parse_utc(value: str) -> dt.datetime:
@@ -74,33 +75,32 @@ def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mai
         folders = mailboxes or [str(item[2]) for item in client.list_folders()]
         for folder in folders:
             try:
-                LOGGER.info("scan_folder_start folder=%s", folder)
+                LOGGER.info("scan_folder_start folder=%s", json.dumps(folder, ensure_ascii=False))
                 selected = client.select_folder(folder, readonly=True)
                 uidvalidity = int(selected[b"UIDVALIDITY"])
                 uids = list(client.search(["SINCE", since, "BEFORE", before]))
-                if not uids:
-                    continue
-                fetched = client.fetch(uids, [b"INTERNALDATE", b"BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)]"])
                 folder_mails: list[dict[str, Any]] = []
-                for uid in uids:
-                    header = BytesParser(policy=policy.default).parsebytes(response_bytes(fetched[int(uid)]), headersonly=True)
-                    rfc_message_id = normalize_rfc_message_id(str(header.get("Message-ID") or ""))
-                    if not rfc_message_id:
-                        raise RuntimeError(f"RFC Message-ID missing: {folder}/{uid}")
-                    internal = fetched[int(uid)].get(b"INTERNALDATE")
-                    if internal is None:
-                        continue
-                    if internal.tzinfo is None:
-                        internal = internal.replace(tzinfo=timezone())
-                    received_instant = internal.astimezone(dt.timezone.utc)
-                    if not (start <= received_instant < end):
-                        continue
-                    folder_mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "received_at": utc_text(received_instant)})
-                mails.extend(folder_mails[-limit:])
-                LOGGER.info("scan_folder_done folder=%s matched=%d", folder, len(folder_mails[-limit:]))
+                if uids:
+                    fetched = client.fetch(uids, [b"INTERNALDATE", b"BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)]"])
+                    for uid in uids:
+                        header = BytesParser(policy=policy.default).parsebytes(response_bytes(fetched[int(uid)]), headersonly=True)
+                        rfc_message_id = normalize_rfc_message_id(str(header.get("Message-ID") or ""))
+                        if not rfc_message_id:
+                            raise RuntimeError(f"RFC Message-ID missing: {folder}/{uid}")
+                        internal = fetched[int(uid)].get(b"INTERNALDATE")
+                        if internal is None:
+                            continue
+                        if internal.tzinfo is None:
+                            internal = internal.replace(tzinfo=timezone())
+                        received_instant = internal.astimezone(dt.timezone.utc)
+                        if not (start <= received_instant < end):
+                            continue
+                        folder_mails.append({"rfc_message_id": rfc_message_id, "folder": folder, "uidvalidity": uidvalidity, "uid": int(uid), "received_at": utc_text(received_instant)})
+                    mails.extend(folder_mails[-limit:])
+                LOGGER.info("scan_folder_done folder=%s candidates=%d matched=%d", json.dumps(folder, ensure_ascii=False), len(uids), len(folder_mails[-limit:]))
             except Exception as exc:
                 failures.append({"folder": folder, "error": str(exc)[:500]})
-                LOGGER.exception("scan_folder_failed folder=%s", folder)
+                LOGGER.exception("scan_folder_failed folder=%s", json.dumps(folder, ensure_ascii=False))
     return mails, failures, len(folders)
 
 
@@ -156,10 +156,11 @@ def run(
     config = load_config(config_path)
     boundary_timezone = str(config.get("timezone") or "UTC")
     configure_program_timezone(boundary_timezone)
-    configure_scanner_logger(output_root, boundary_timezone)
+    scanner_cfg = config.get("scanner") or {}
+    configure_scanner_logger(output_root, boundary_timezone, parse_log_level(scanner_cfg.get("log_level_file")))
     boundary = ZoneInfo(boundary_timezone)
     start, end = resolve_window(boundary, date=date, date_from=date_from, date_to=date_to, from_time=from_time, to_time=to_time)
-    LOGGER.info("scan_start from_time=%s to_time=%s requested_mailboxes=%s", utc_text(start), utc_text(end), mailboxes or "all")
+    LOGGER.info("scan_start from_time=%s to_time=%s requested_mailboxes=%s", utc_text(start), utc_text(end), json.dumps(mailboxes if mailboxes is not None else "all", ensure_ascii=False))
     first = start.astimezone(boundary).date()
     last = (end - dt.timedelta(microseconds=1)).astimezone(boundary).date()
     days = [(first + dt.timedelta(days=offset)).isoformat() for offset in range((last - first).days + 1)]

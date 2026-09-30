@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
+import logging
 import os
 import signal
 import sys
@@ -14,7 +16,7 @@ from email.parser import BytesParser
 
 from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.imap_backend import connect_imap, response_bytes  # noqa: E402
-from email_pipeline.daily_logging import configure_daily_logger  # noqa: E402
+from email_pipeline.daily_logging import configure_daily_logger, parse_log_level  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone, format_rfc3339, timezone  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex, normalize_rfc_message_id  # noqa: E402
 from email_pipeline.paths import daily_root, database_path as default_database_path  # noqa: E402
@@ -25,9 +27,9 @@ STOP = False
 LOGGER = __import__("logging").getLogger("email_pipeline.watcher")
 
 
-def configure_watcher_logger(timezone_name: str = "UTC") -> None:
+def configure_watcher_logger(timezone_name: str = "UTC", file_level: int = logging.INFO, console_level: int | None = None) -> None:
     global LOGGER
-    LOGGER = configure_daily_logger(daily_root(), "watcher", timezone_name)
+    LOGGER = configure_daily_logger(daily_root(), "watcher", timezone_name, file_level, console_level)
 
 
 def stop(*_args) -> None:
@@ -93,8 +95,10 @@ def _run_watcher() -> int:
         config = load_config(config_path)
         boundary_timezone = str(config.get("timezone") or "UTC")
         configure_program_timezone(boundary_timezone)
-        configure_watcher_logger(boundary_timezone)
         watch = config.get("watcher") or {}
+        file_level = parse_log_level(watch.get("log_level_file"))
+        console_level = parse_log_level(watch.get("log_level_console"), default=file_level)
+        configure_watcher_logger(boundary_timezone, file_level, console_level)
         poll_seconds = max(15, int(watch.get("poll_seconds") or 60))
         debounce_seconds = max(1, int(watch.get("debounce_seconds") or 10))
         identity = config.get("identity") or {}
@@ -116,7 +120,7 @@ def _run_watcher() -> int:
                         for mail in mails:
                             inserted += int(index.enqueue_event(account=account, rfc_message_id=mail["rfc_message_id"], folder=mail["folder"], uidvalidity=mail["uidvalidity"], uid=mail["uid"], received_at=mail.get("received_at")))
                         if mails:
-                            LOGGER.info("enqueued detected=%d inserted=%d changed_folders=%s", len(mails), inserted, sorted(changes))
+                            LOGGER.info("enqueued detected=%d inserted=%d changed_folders=%s", len(mails), inserted, json.dumps(sorted(changes), ensure_ascii=False))
                     previous = current
                     index.replace_watch_snapshot(account, current)
             except Exception:

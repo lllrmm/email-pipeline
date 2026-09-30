@@ -94,6 +94,8 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('"summarize"', orchestrator)
         self.assertIn("ThreadPoolExecutor", orchestrator)
         self.assertIn('get("summarizer_concurrency")', orchestrator)
+        self.assertIn("configure_daily_logger", orchestrator)
+        self.assertIn('"orchestrator"', orchestrator)
         self.assertNotIn("aggregate-mails-agentic.py", orchestrator)
 
     def test_daily_aggregation_waits_for_queue_completion(self) -> None:

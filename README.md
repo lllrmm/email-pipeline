@@ -95,6 +95,7 @@ SQLite has four business tables: `email`, `email_location`,
 │   ├── summary.json
 │   └── opencode-run/
 ├── logs/
+│   ├── orchestrator/orchestrator.log
 │   ├── watcher/watcher.log
 │   └── scanner/scanner.log
 └── aggregation/

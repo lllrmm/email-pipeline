@@ -31,9 +31,13 @@ timeout_seconds = 600
 [orchestrator]
 summarizer_concurrency = 8
 token_refresh_check_seconds = 60
+token_refresh_window_seconds = 300
+log_level_file = "INFO"
+log_level_console = "INFO"
 
 [scanner]
 concurrency = 1
+log_level_file = "INFO"
 
 [imap]
 host = "outlook.office365.com"
@@ -46,6 +50,8 @@ concurrency = 1
 enabled = false
 poll_seconds = 60
 debounce_seconds = 10
+log_level_file = "INFO"
+log_level_console = "INFO"
 
 [identity]
 account = "outlook"
