@@ -55,8 +55,7 @@ src/email_pipeline/
 ├── aggregator/
 │   ├── aggregate.py         daily aggregation logic
 │   └── daily_schema.py      aggregation output validation
-├── services/
-│   └── registry.py          stable identity and IMAP-location registration
+├── registry.py              stable identity and IMAP-location registration
 ├── mail_identity.py         SQLite repositories and schema migration
 ├── imap_backend.py          read-only IMAP transport
 ├── agent_tools.py           restricted OpenCode mail tools

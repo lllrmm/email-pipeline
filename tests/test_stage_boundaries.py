@@ -46,7 +46,7 @@ class StageBoundaryTests(unittest.TestCase):
 
     def test_scanner_and_fallback_use_queue_as_idempotency_boundary(self) -> None:
         scanner = (ROOT / "src/email_pipeline/scanner/scan.py").read_text(encoding="utf-8")
-        indexer = (ROOT / "src/email_pipeline/services/registry.py").read_text(encoding="utf-8")
+        indexer = (ROOT / "src/email_pipeline/registry.py").read_text(encoding="utf-8")
         summarizer = (ROOT / "src/email_pipeline/summarizer/summarize.py").read_text(encoding="utf-8")
 
         self.assertNotIn('identity.get("summarized")', scanner)
@@ -55,7 +55,7 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertNotIn('identity.get("summarized")', summarizer)
 
     def test_index_mail_accepts_only_rfc_identity_inputs(self) -> None:
-        indexer = (ROOT / "src/email_pipeline/services/registry.py").read_text(encoding="utf-8")
+        indexer = (ROOT / "src/email_pipeline/registry.py").read_text(encoding="utf-8")
 
         self.assertIn('parser.add_argument("--rfc-message-id"', indexer)
         self.assertIn('parser.add_argument("--folder"', indexer)

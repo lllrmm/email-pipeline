@@ -18,7 +18,7 @@ from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.mail_identity import get_or_create_salt  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
-from email_pipeline.services.registry import register_mail  # noqa: E402
+from email_pipeline.registry import register_mail  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
 from email_pipeline.paths import daily_root, database_path as default_database_path, salt_path as default_salt_path, token_refresh_path  # noqa: E402
 

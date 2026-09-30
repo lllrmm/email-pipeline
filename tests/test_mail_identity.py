@@ -10,7 +10,7 @@ from email_pipeline.mail_identity import MailIdentityIndex, get_or_create_salt, 
 from email_pipeline.program_time import configure_program_timezone
 
 from email_pipeline.cli import scan as SCAN_MAILS
-from email_pipeline.services import registry as INDEX_MAIL
+from email_pipeline import registry as INDEX_MAIL
 
 class MailIdentityTests(unittest.TestCase):
     def test_fresh_database_has_four_business_tables(self) -> None:

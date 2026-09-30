@@ -10,7 +10,7 @@ from .cli.init import main as init_main
 from .cli.service import main as service_main
 from .cli.scan import main as scan_main
 from .cli.summarize import main as summarize_main
-from .services.registry import main as register_main
+from .registry import main as register_main
 
 COMMANDS = {
     "scan": scan_main,
