@@ -18,7 +18,9 @@ def main() -> int:
         raise SystemExit(f"already initialized: {root}")
     repo = Path(__file__).resolve().parents[3]
     config = root / "config"
+    auth = root / "auth"
     config.mkdir(parents=True, mode=0o700)
+    auth.mkdir(parents=True, mode=0o700)
     (state / "instance.toml").write_text("version = 1\n", encoding="utf-8")
     shutil.copy2(repo / "daily-mail-pipeline.toml.example", config / "daily-mail-pipeline.toml")
     for name in ("summarizer-system-prompt.txt", "aggregator-system-prompt.txt"):

@@ -42,6 +42,13 @@ def config_root() -> Path:
     return _root(CONFIG_ROOT_ENV, DEFAULT_CONFIG_ROOT)
 
 
+def auth_root() -> Path:
+    root = instance_root()
+    if root is not None:
+        return root / "auth"
+    return config_root()
+
+
 def data_root() -> Path:
     root = instance_root()
     if root is not None and not os.environ.get(DATA_ROOT_ENV):
@@ -70,7 +77,7 @@ def salt_path() -> Path:
 
 
 def token_refresh_path() -> Path:
-    return config_root() / "outlook-token-refresh.sh"
+    return auth_root() / "outlook-token-refresh.sh"
 
 
 def opencode_runtime_root() -> Path:
