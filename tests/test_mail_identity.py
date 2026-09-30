@@ -27,53 +27,6 @@ class MailIdentityTests(unittest.TestCase):
                 "email_watch_folder_state",
             })
 
-    def test_existing_database_is_migrated_to_compact_schema(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            database = Path(temp_dir) / "legacy.sqlite3"
-            connection = sqlite3.connect(database)
-            connection.executescript(
-                """
-                CREATE TABLE email_identity (
-                    pipeline_id TEXT PRIMARY KEY,
-                    rfc_message_id TEXT,
-                    identity_source TEXT NOT NULL,
-                    first_seen TEXT NOT NULL,
-                    last_seen TEXT NOT NULL,
-                    eml_sha256 TEXT,
-                    summarized INTEGER NOT NULL DEFAULT 0,
-                    summarized_at TEXT
-                );
-                CREATE TABLE email_location (
-                    account TEXT NOT NULL,
-                    folder TEXT NOT NULL,
-                    himalaya_id TEXT NOT NULL,
-                    pipeline_id TEXT NOT NULL,
-                    observed_date TEXT,
-                    last_seen TEXT NOT NULL,
-                    PRIMARY KEY(account, folder, himalaya_id)
-                );
-                CREATE TABLE email_workspace (
-                    pipeline_id TEXT NOT NULL,
-                    observed_date TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    last_seen TEXT NOT NULL,
-                    PRIMARY KEY(pipeline_id, observed_date)
-                );
-                """
-            )
-            connection.close()
-
-            MailIdentityIndex(database)
-            connection = sqlite3.connect(database)
-            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            connection.close()
-
-            self.assertIn("email", tables)
-            self.assertIn("email_location", tables)
-            self.assertNotIn("email_identity", tables)
-            self.assertNotIn("email_metadata", tables)
-            self.assertNotIn("email_workspace", tables)
-
     def test_missing_rfc_message_id_is_a_hard_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -132,7 +85,6 @@ class MailIdentityTests(unittest.TestCase):
             )
             index.record_imap_location(
                 pipeline_id=pipeline_id,
-                account="outlook",
                 folder="Inbox",
                 uidvalidity=123,
                 uid=42,
@@ -174,7 +126,6 @@ class MailIdentityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             index = MailIdentityIndex(Path(temp_dir) / "index.sqlite3")
             index.enqueue_event(
-                account="outlook",
                 rfc_message_id="<queue@example.com>",
                 folder="Inbox",
                 uidvalidity=123,
@@ -191,16 +142,16 @@ class MailIdentityTests(unittest.TestCase):
     def test_watch_snapshot_is_replaced_transactionally(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             index = MailIdentityIndex(Path(temp_dir) / "index.sqlite3")
-            index.replace_watch_snapshot("outlook", {
+            index.replace_watch_snapshot({
                 "Inbox": {"uidvalidity": 1, "uidnext": 10, "messages": 9},
                 "Canvas": {"uidvalidity": 2, "uidnext": 20, "messages": 18},
             })
-            self.assertEqual(index.load_watch_snapshot("outlook")["Inbox"]["uidnext"], 10)
+            self.assertEqual(index.load_watch_snapshot()["Inbox"]["uidnext"], 10)
 
-            index.replace_watch_snapshot("outlook", {
+            index.replace_watch_snapshot({
                 "Inbox": {"uidvalidity": 1, "uidnext": 11, "messages": 10},
             })
-            snapshot = index.load_watch_snapshot("outlook")
+            snapshot = index.load_watch_snapshot()
             self.assertEqual(snapshot, {
                 "Inbox": {"uidvalidity": 1, "uidnext": 11, "messages": 10},
             })

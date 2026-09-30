@@ -12,13 +12,7 @@ class ScanEnqueueTests(unittest.TestCase):
     def test_enqueue_scan_result_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            config_path = root / "pipeline.toml"
-            config_path.write_text(
-                "timezone = \"UTC\"\n"
-                "[identity]\n"
-                f"database_path = \"{root / 'mail-index.sqlite3'}\"\n",
-                encoding="utf-8",
-            )
+            database = root / "mail-index.sqlite3"
             result = {
                 "date": "2026-10-01",
                 "mails": [
@@ -39,12 +33,12 @@ class ScanEnqueueTests(unittest.TestCase):
                 ],
             }
 
-            first = enqueue_scan_result(result, config_path)
-            second = enqueue_scan_result(result, config_path)
+            first = enqueue_scan_result(result, database_path=database)
+            second = enqueue_scan_result(result, database_path=database)
 
             self.assertEqual((first["queued"], first["skipped"]), (2, 0))
             self.assertEqual((second["queued"], second["skipped"]), (0, 2))
-            index = MailIdentityIndex(root / "mail-index.sqlite3")
+            index = MailIdentityIndex(database)
             self.assertEqual(len(index.list_queue_events()), 2)
 
 

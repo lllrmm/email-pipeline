@@ -1,7 +1,44 @@
 timezone = "Asia/Hong_Kong"
 
+[imap]
+host = "outlook.office365.com"    # IMAP host
+port = 993                        # IMAP port (993 = TLS)
+ssl = true                        # Use TLS
+username = "rlidf@connect.ust.hk" # OAuth2 login account
+
+[identity]
+salt_path = "pipeline-id-salt" # Pipeline-ID salt file, relative to the config dir
+
+[extraction]
+max_body_chars = 12000
+
+[attachments]
+max_count_per_message = 10
+max_inline_images_per_message = 5
+max_single_file_mb = 15
+max_total_file_mb = 30
+max_extracted_text_chars = 30000
+
+[orchestrator]
+token_refresh_check_seconds = 60    # Seconds between token expiry checks
+token_refresh_window_seconds = 300  # Refresh when the token's remaining lifetime <= this
+summarizer_concurrency = 8          # Number of concurrent summarizer workers
+log_level_file = "INFO"             # File log level (DEBUG/INFO/WARNING/ERROR/CRITICAL)
+log_level_console = "INFO"          # Console/journal level
+
+[watcher]
+enabled = false       # Enable the watcher service
+poll_seconds = 60     # UIDNEXT poll interval in seconds (code floor: 15)
+debounce_seconds = 10 # Wait this long after a change before fetching new mail
+log_level_file = "INFO"    # File log level
+log_level_console = "INFO" # Console/journal level
+
+[scanner]
+scan_delay_seconds = 0.0 # Sleep between folder scans, in seconds (0 disables)
+log_level_file = "INFO"  # File log level; the stderr is always ERROR-only
+
 [summarizer]
-system_prompt_file = "summarizer-system-prompt.txt"
+system_prompt_file = "summarizer-system-prompt.txt" # System prompt, relative to the config dir
 
 [summarizer.model]
 provider = "deepseek"
@@ -27,48 +64,3 @@ api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"
 [aggregator.opencode]
 agent = "mail-daily-aggregator"
 timeout_seconds = 600
-
-[orchestrator]
-summarizer_concurrency = 8
-token_refresh_check_seconds = 60
-token_refresh_window_seconds = 300
-log_level_file = "INFO"
-log_level_console = "INFO"
-
-[scanner]
-concurrency = 1
-log_level_file = "INFO"
-
-[imap]
-host = "outlook.office365.com"
-port = 993
-ssl = true
-username = "rlidf@connect.ust.hk"
-concurrency = 1
-
-[watcher]
-enabled = false
-poll_seconds = 60
-debounce_seconds = 10
-log_level_file = "INFO"
-log_level_console = "INFO"
-
-[identity]
-account = "outlook"
-
-[throttle]
-scan_delay_seconds = 0.0
-read_delay_seconds = 0.0
-
-[imap_retry]
-waits = [20, 60]
-
-[extraction]
-max_body_chars = 12000
-
-[attachments]
-max_count_per_message = 10
-max_inline_images_per_message = 5
-max_single_file_mb = 15
-max_total_file_mb = 30
-max_extracted_text_chars = 30000

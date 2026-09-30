@@ -170,8 +170,7 @@ def main() -> int:
     args = parser.parse_args()
     config = load_config(args.config.expanduser().resolve())
     timezone = ZoneInfo(str(config.get("timezone") or "UTC"))
-    identity = config.get("identity") or {}
-    database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
+    database = default_database_path()
     root = args.output_root.expanduser().resolve()
     database_fields = migrate_database(database, timezone)
     json_files, json_fields = migrate_json_files(root, timezone)

@@ -6,6 +6,8 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import sys
+import time
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -39,6 +41,14 @@ def utc_text(value: dt.datetime) -> str:
     return format_rfc3339(value)
 
 
+def parse_scan_delay(value: object) -> float:
+    try:
+        return max(0.0, float(value or 0.0))
+    except (TypeError, ValueError):
+        print(f"warning: invalid scan_delay_seconds '{value}' (using 0.0)", file=sys.stderr)
+        return 0.0
+
+
 def resolve_window(
     boundary: ZoneInfo,
     *,
@@ -66,14 +76,16 @@ def resolve_window(
     )
 
 
-def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mailboxes: list[str] | None, limit: int) -> tuple[list[dict[str, Any]], list[dict[str, str]], int]:
+def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mailboxes: list[str] | None, limit: int, delay_seconds: float = 0.0) -> tuple[list[dict[str, Any]], list[dict[str, str]], int]:
     since = (start.date() - dt.timedelta(days=1)).strftime("%d-%b-%Y")
     before = (end.date() + dt.timedelta(days=1)).strftime("%d-%b-%Y")
     mails: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
     with connect_imap(config) as client:
         folders = mailboxes or [str(item[2]) for item in client.list_folders()]
-        for folder in folders:
+        for index, folder in enumerate(folders):
+            if index and delay_seconds > 0:
+                time.sleep(delay_seconds)
             try:
                 LOGGER.info("scan_folder_start folder=%s", json.dumps(folder, ensure_ascii=False))
                 selected = client.select_folder(folder, readonly=True)
@@ -104,19 +116,13 @@ def scan_range(config: dict[str, Any], start: dt.datetime, end: dt.datetime, mai
     return mails, failures, len(folders)
 
 
-def enqueue_scan_result(result: dict[str, Any], config_path: Path) -> dict[str, Any]:
-    config = load_config(config_path)
-    identity_cfg = config.get("identity") or {}
-    account = str(identity_cfg.get("account") or "outlook")
-    database = Path(
-        identity_cfg.get("database_path") or default_database_path()
-    ).expanduser().resolve()
+def enqueue_scan_result(result: dict[str, Any], *, database_path: Path | None = None) -> dict[str, Any]:
+    database = database_path or default_database_path()
     index = MailIdentityIndex(database)
     queued = skipped = 0
     mails = result.get("mails") or []
     for mail in mails:
         inserted = index.enqueue_event(
-            account=account,
             rfc_message_id=str(mail["rfc_message_id"]),
             folder=str(mail["folder"]),
             uidvalidity=int(mail["uidvalidity"]),
@@ -157,16 +163,17 @@ def run(
     boundary_timezone = str(config.get("timezone") or "UTC")
     configure_program_timezone(boundary_timezone)
     scanner_cfg = config.get("scanner") or {}
+    scan_delay_seconds = parse_scan_delay(scanner_cfg.get("scan_delay_seconds"))
     configure_scanner_logger(output_root, boundary_timezone, parse_log_level(scanner_cfg.get("log_level_file")))
     boundary = ZoneInfo(boundary_timezone)
     start, end = resolve_window(boundary, date=date, date_from=date_from, date_to=date_to, from_time=from_time, to_time=to_time)
-    LOGGER.info("scan_start from_time=%s to_time=%s requested_mailboxes=%s", utc_text(start), utc_text(end), json.dumps(mailboxes if mailboxes is not None else "all", ensure_ascii=False))
+    LOGGER.info("scan_start from_time=%s to_time=%s requested_mailboxes=%s scan_delay_seconds=%s", utc_text(start), utc_text(end), json.dumps(mailboxes if mailboxes is not None else "all", ensure_ascii=False), scan_delay_seconds)
     first = start.astimezone(boundary).date()
     last = (end - dt.timedelta(microseconds=1)).astimezone(boundary).date()
     days = [(first + dt.timedelta(days=offset)).isoformat() for offset in range((last - first).days + 1)]
     try:
         with ProcessLock("scanner"):
-            mails, failures, mailbox_count = scan_range(config, start, end, mailboxes, limit_per_mailbox)
+            mails, failures, mailbox_count = scan_range(config, start, end, mailboxes, limit_per_mailbox, scan_delay_seconds)
             per_day: list[dict[str, Any]] = []
             total = 0
             for day in days:
@@ -174,7 +181,7 @@ def run(
                 total += len(day_mails)
                 queued = skipped = None
                 if register:
-                    counts = enqueue_scan_result({"date": day, "mails": day_mails, "mailboxes_total": mailbox_count, "mailboxes_failed": failures}, config_path)
+                    counts = enqueue_scan_result({"date": day, "mails": day_mails, "mailboxes_total": mailbox_count, "mailboxes_failed": failures})
                     queued, skipped = counts["queued"], counts["skipped"]
                     LOGGER.info("scan_registered date=%s queued=%d skipped=%d", day, queued, skipped)
                 per_day.append({

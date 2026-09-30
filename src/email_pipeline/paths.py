@@ -76,6 +76,15 @@ def salt_path() -> Path:
     return config_root() / "pipeline-id-salt"
 
 
+def resolve_salt_path(config_path: Path, value: object = None) -> Path:
+    if value:
+        path = Path(str(value)).expanduser()
+        if not path.is_absolute():
+            path = config_path.parent / path
+        return path.resolve()
+    return salt_path()
+
+
 def token_refresh_path() -> Path:
     return auth_db_path().with_name("outlook-token-refresh.py")
 

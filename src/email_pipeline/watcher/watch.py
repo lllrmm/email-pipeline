@@ -101,11 +101,9 @@ def _run_watcher() -> int:
         configure_watcher_logger(boundary_timezone, file_level, console_level)
         poll_seconds = max(15, int(watch.get("poll_seconds") or 60))
         debounce_seconds = max(1, int(watch.get("debounce_seconds") or 10))
-        identity = config.get("identity") or {}
-        account = str(identity.get("account") or "outlook")
-        database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
+        database = default_database_path()
         index = MailIdentityIndex(database)
-        previous = index.load_watch_snapshot(account)
+        previous = index.load_watch_snapshot()
         LOGGER.info("watcher_start mode=all_folder_uidnext_poll poll_seconds=%d debounce_seconds=%d", poll_seconds, debounce_seconds)
         while not STOP:
             try:
@@ -118,11 +116,11 @@ def _run_watcher() -> int:
                         mails = event_mails(client, changes)
                         inserted = 0
                         for mail in mails:
-                            inserted += int(index.enqueue_event(account=account, rfc_message_id=mail["rfc_message_id"], folder=mail["folder"], uidvalidity=mail["uidvalidity"], uid=mail["uid"], received_at=mail.get("received_at")))
+                            inserted += int(index.enqueue_event(rfc_message_id=mail["rfc_message_id"], folder=mail["folder"], uidvalidity=mail["uidvalidity"], uid=mail["uid"], received_at=mail.get("received_at")))
                         if mails:
                             LOGGER.info("enqueued detected=%d inserted=%d changed_folders=%s", len(mails), inserted, json.dumps(sorted(changes), ensure_ascii=False))
                     previous = current
-                    index.replace_watch_snapshot(account, current)
+                    index.replace_watch_snapshot(current)
             except Exception:
                 LOGGER.exception("watch_error")
                 time.sleep(15)

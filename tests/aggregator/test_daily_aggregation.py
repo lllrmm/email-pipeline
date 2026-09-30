@@ -179,7 +179,7 @@ class DailyAggregationTests(unittest.TestCase):
                 pipeline_id=pipeline_id,
                 rfc_message_id="<test@example.com>",
             )
-            index.record_imap_location(pipeline_id=pipeline_id, account="outlook", folder="Inbox", uidvalidity=123, uid=42)
+            index.record_imap_location(pipeline_id=pipeline_id, folder="Inbox", uidvalidity=123, uid=42)
             (email_dir / "request.json").write_text(json.dumps({
                 "pipeline_id": pipeline_id,
                 "index_database": str(database),

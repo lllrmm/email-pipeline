@@ -24,7 +24,7 @@ from email_pipeline.mail_identity import get_or_create_salt  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 from email_pipeline.registry import register_mail  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
-from email_pipeline.paths import auth_db_path, daily_root, database_path as default_database_path, salt_path as default_salt_path, token_refresh_path  # noqa: E402
+from email_pipeline.paths import auth_db_path, daily_root, database_path as default_database_path, resolve_salt_path, token_refresh_path  # noqa: E402
 
 STOP = False
 CONFIG_PATH = default_config_path()
@@ -57,8 +57,8 @@ def event_day(event: dict, timezone_name: str) -> str:
 
 def process_event(event: dict, config: dict, config_path: Path, index: MailIdentityIndex, timezone_name: str) -> str:
     identity_cfg = config.get("identity") or {}
-    salt_path = Path(identity_cfg.get("salt_path") or default_salt_path()).expanduser().resolve()
-    result = register_mail(event["rfc_message_id"], event["folder"], int(event["uidvalidity"]), int(event["imap_uid"]), account=str(identity_cfg.get("account") or "outlook"), salt=get_or_create_salt(salt_path), database_path=index.path)
+    salt_path = resolve_salt_path(config_path, identity_cfg.get("salt_path"))
+    result = register_mail(event["rfc_message_id"], event["folder"], int(event["uidvalidity"]), int(event["imap_uid"]), salt=get_or_create_salt(salt_path), database_path=index.path)
     pipeline_id = result["pipeline_id"]
     day = event_day(event, timezone_name)
     proposed_dir = daily_root() / day / "emails" / pipeline_id
@@ -126,8 +126,7 @@ def main() -> int:
     configure_orchestrator_logger()
     config_path = Path(os.environ.get("EMAIL_PIPELINE_CONFIG") or CONFIG_PATH).expanduser().resolve()
     config = load_config(config_path)
-    identity = config.get("identity") or {}
-    database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
+    database = default_database_path()
     timezone_name = str(config.get("timezone") or "UTC")
     orchestrator_cfg = config.get("orchestrator") or {}
     concurrency = max(1, int(orchestrator_cfg.get("summarizer_concurrency") or 1))
