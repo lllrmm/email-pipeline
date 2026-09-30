@@ -6,4 +6,8 @@ if [ -f "$script_root/email-pipeline.py" ]; then
 else
   root=${EMAIL_PIPELINE_CODE_ROOT:-"$HOME/email-pipeline-code"}
 fi
-exec python3 "$root/email-pipeline.py" "$@"
+python_bin=${EMAIL_PIPELINE_PYTHON:-"$root/.venv/bin/python3"}
+if [ ! -x "$python_bin" ]; then
+  python_bin=python3
+fi
+exec "$python_bin" "$root/email-pipeline.py" "$@"

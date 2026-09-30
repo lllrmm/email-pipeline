@@ -42,11 +42,11 @@ def config_root() -> Path:
     return _root(CONFIG_ROOT_ENV, DEFAULT_CONFIG_ROOT)
 
 
-def auth_root() -> Path:
+def auth_db_path() -> Path:
     root = instance_root()
     if root is not None:
-        return root / "auth"
-    return config_root()
+        return root / "auth.sqlite3"
+    return config_root() / "auth.sqlite3"
 
 
 def data_root() -> Path:
@@ -77,7 +77,7 @@ def salt_path() -> Path:
 
 
 def token_refresh_path() -> Path:
-    return auth_root() / "outlook-token-refresh.sh"
+    return auth_db_path().with_name("outlook-token-refresh.py")
 
 
 def opencode_runtime_root() -> Path:
@@ -85,4 +85,4 @@ def opencode_runtime_root() -> Path:
 
 
 def entrypoint_path() -> Path:
-    return code_root() / "email-pipeline.py"
+    return code_root() / ".venv/bin/email-pipeline"

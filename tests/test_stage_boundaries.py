@@ -48,7 +48,7 @@ class StageBoundaryTests(unittest.TestCase):
         scanner = (ROOT / "src/email_pipeline/cli/scan.py").read_text(encoding="utf-8")
         orchestrator = (ROOT / "src/email_pipeline/cli/enqueue_scan.py").read_text(encoding="utf-8")
         indexer = (ROOT / "src/email_pipeline/services/registry.py").read_text(encoding="utf-8")
-        summarizer = (ROOT / "src/email_pipeline/cli/summarize.py").read_text(encoding="utf-8")
+        summarizer = (ROOT / "src/email_pipeline/summarizer/summarize.py").read_text(encoding="utf-8")
 
         self.assertNotIn('identity.get("summarized")', scanner)
         self.assertIn("enqueue_event", orchestrator)
@@ -70,7 +70,7 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertNotIn("update_metadata", indexer)
 
     def test_agentic_output_path_is_caller_selected_inside_workspace(self) -> None:
-        source = (ROOT / "src/email_pipeline/cli/summarize.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/email_pipeline/summarizer/summarize.py").read_text(encoding="utf-8")
         self.assertNotIn("output_path.name", source)
         self.assertIn("workspace not in output_path.parents", source)
         self.assertIn('runtime_root / "sessions" / pipeline_id', source)
@@ -106,16 +106,17 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('"aggregate"', source)
 
     def test_aggregation_does_not_materialize_pipeline_id_list(self) -> None:
-        source = (ROOT / "src/email_pipeline/cli/aggregate.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/email_pipeline/aggregator/aggregate.py").read_text(encoding="utf-8")
 
         self.assertNotIn('workdir / "pipeline-id-list.json"', source)
         self.assertIn("INPUT_PIPELINE_IDS_JSON", source)
 
     def test_aggregation_outputs_are_timestamped_in_aggregation_directory(self) -> None:
-        aggregator = (ROOT / "src/email_pipeline/cli/aggregate.py").read_text(encoding="utf-8")
+        shell = (ROOT / "src/email_pipeline/cli/aggregate.py").read_text(encoding="utf-8")
+        aggregator = (ROOT / "src/email_pipeline/aggregator/aggregate.py").read_text(encoding="utf-8")
 
-        self.assertIn('parser.add_argument("--output-dir"', aggregator)
-        self.assertNotIn('parser.add_argument("--output"', aggregator)
+        self.assertIn('parser.add_argument("--output-dir"', shell)
+        self.assertNotIn('parser.add_argument("--output"', shell)
         self.assertIn('workdir / "aggregation"', aggregator)
         self.assertIn('return f"aggregation-', aggregator)
         self.assertNotIn("daily-mail-pipeline.py", aggregator)

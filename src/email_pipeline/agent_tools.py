@@ -24,7 +24,7 @@ import requests
 from .config import load_config
 from .paths import config_path
 from .mime_extract import extract_attachment_text, normalize_space, secure_write_bytes, secure_write_text
-from .daily_schema import validation_result
+from .aggregator.daily_schema import validation_result
 from .mail_identity import MailIdentityIndex
 from .imap_backend import fetch_raw
 

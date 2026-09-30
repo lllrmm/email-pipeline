@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
 from email_pipeline.config import load_config
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 class ConfigTests(unittest.TestCase):
     def test_example_is_valid_toml(self) -> None:
-        path = Path(__file__).resolve().parents[1] / "daily-mail-pipeline.toml.example"
-        config = load_config(path)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+            shutil.copy2(ROOT / "daily-mail-pipeline.toml.example", config_dir / "daily-mail-pipeline.toml")
+            shutil.copy2(ROOT / "opencode" / "summarizer" / "system-prompt.txt", config_dir / "summarizer-system-prompt.txt")
+            shutil.copy2(ROOT / "opencode" / "aggregator" / "system-prompt.txt", config_dir / "aggregator-system-prompt.txt")
+            config = load_config(config_dir / "daily-mail-pipeline.toml")
         self.assertEqual(config["timezone"], "Asia/Hong_Kong")
         self.assertEqual(config["summarizer"]["concurrency"], 8)
         self.assertEqual(config["summarizer"]["model"]["api_key_env"], "EMAIL_SUMMARY_DEEPSEEK_API_KEY")

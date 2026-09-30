@@ -11,7 +11,7 @@ from email_pipeline.mail_identity import MailIdentityIndex
 from email_pipeline.program_time import configure_program_timezone
 
 
-from email_pipeline.cli import aggregate as MODULE
+from email_pipeline.aggregator import aggregate as MODULE
 
 class DailyAggregationTests(unittest.TestCase):
     def test_aggregation_artifact_records_every_input_pipeline_id(self) -> None:

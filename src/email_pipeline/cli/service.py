@@ -8,7 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from email_pipeline.paths import code_root, instance_root
+from email_pipeline.paths import code_root, entrypoint_path, instance_root
 from email_pipeline.config import default_config_path, load_config
 
 
@@ -29,12 +29,11 @@ def unit_text(root: Path, component: str, watch_name: str) -> str:
         "Wants=network-online.target\n\n"
         "[Service]\nType=simple\n"
         f"WorkingDirectory={root}\n"
-        f"ExecStart=/usr/bin/python3 {code_root() / 'email-pipeline.py'} {command}\n"
+        f"ExecStart={entrypoint_path()} {command}\n"
         "Restart=always\nRestartSec=15\n"
         "Environment=PYTHONUNBUFFERED=1\n"
         f"Environment=EMAIL_PIPELINE_CODE_ROOT={code_root()}\n"
         f"Environment=EMAIL_PIPELINE_INSTANCE_ROOT={root}\n"
-        f"Environment=PYTHONPATH={code_root() / 'src'}:{code_root() / 'vendor'}\n\n"
         "[Install]\nWantedBy=default.target\n"
     )
 

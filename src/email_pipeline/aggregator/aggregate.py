@@ -1,0 +1,296 @@
+#!/usr/bin/env python3
+"""Aggregate fixed per-email agent results for one day with OpenCode."""
+
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import json
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from email_pipeline.aggregator.daily_schema import validate_daily_summary  # noqa: E402
+from email_pipeline.config import load_config  # noqa: E402
+from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone, filename_timestamp, format_rfc3339, now_rfc3339  # noqa: E402
+from email_pipeline.paths import credential_env_path, opencode_runtime_root  # noqa: E402
+
+
+def generated_at() -> str:
+    return now_rfc3339()
+
+
+def aggregation_filename(generated_at: str) -> str:
+    timestamp = dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+    return f"aggregation-{filename_timestamp(timestamp)}.json"
+
+
+def email_time_bounds(values: list[str]) -> tuple[str | None, str | None]:
+    parsed: list[dt.datetime] = []
+    for value in values:
+        try:
+            timestamp = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        if timestamp.tzinfo is None:
+            continue
+        parsed.append(timestamp)
+    if not parsed:
+        return None, None
+    return (
+        format_rfc3339(min(parsed)),
+        format_rfc3339(max(parsed)),
+    )
+
+
+def build_aggregation_artifact(
+    result: dict[str, Any],
+    pipeline_ids: list[str],
+    *,
+    earliest_email_at: str | None,
+    latest_email_at: str | None,
+    session_id: str | None,
+    model: str,
+    tools_used: list[str],
+) -> dict[str, Any]:
+    return {
+        "schema_version": 3,
+        "artifact_type": "mail_daily_summary",
+        "generated_at": generated_at(),
+        "included_pipeline_ids": list(pipeline_ids),
+        "earliest_email_at": earliest_email_at,
+        "latest_email_at": latest_email_at,
+        "processor": {
+            "processor": "opencode",
+            "session_id": session_id,
+            "model": model,
+            "tools_used": tools_used,
+        },
+        "daily_summary": result,
+    }
+
+
+def secure_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        os.replace(temp_name, path)
+        path.chmod(0o600)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise
+
+
+def resolve_key(stage_cfg: dict[str, Any]) -> str:
+    model = stage_cfg.get("model") or {}
+    env_name = str(model.get("api_key_env") or "EMAIL_SUMMARY_DEEPSEEK_API_KEY")
+    value = os.environ.get(env_name, "").strip()
+    if value:
+        return value
+    inline_value = str(model.get("api_key") or "").strip()
+    if inline_value:
+        return inline_value
+    for line in credential_env_path().read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith(f"{env_name}="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    raise RuntimeError(f"credential not found: {env_name}")
+
+
+def walk(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from walk(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from walk(child)
+
+
+def parse_json_object(text: str) -> dict[str, Any] | None:
+    value = text.strip()
+    if value.startswith("```"):
+        first_newline = value.find("\n")
+        value = value[first_newline + 1:] if first_newline >= 0 else value
+        if value.rstrip().endswith("```"):
+            value = value.rstrip()[:-3].rstrip()
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+    start = value.find("{")
+    end = value.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        parsed = json.loads(value[start:end + 1])
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def parse_events(stdout: str) -> tuple[str | None, list[str], dict[str, Any] | None]:
+    session_id = None
+    tools: list[str] = []
+    candidates: list[str] = []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        for item in walk(event):
+            for key in ("sessionID", "sessionId", "session_id"):
+                if isinstance(item.get(key), str):
+                    session_id = item[key]
+            tool_name = item.get("tool") or item.get("toolName") or item.get("name")
+            item_type = str(item.get("type") or "").lower()
+            if isinstance(tool_name, str) and "tool" in item_type and tool_name.startswith("mail_"):
+                tools.append(tool_name)
+            if isinstance(item.get("text"), str):
+                candidates.append(item["text"])
+    for text in reversed(candidates):
+        result = parse_json_object(text)
+        if isinstance(result, dict) and "overview" in result:
+            return session_id, list(dict.fromkeys(tools)), result
+    return session_id, list(dict.fromkeys(tools)), None
+
+
+def validate_pipeline_inputs(workdir: Path, pipeline_ids: list[str]) -> list[str]:
+    received_times: list[str] = []
+    for pipeline_id in pipeline_ids:
+        if len(pipeline_id) != 64 or any(char not in "0123456789abcdef" for char in pipeline_id):
+            raise RuntimeError(f"invalid pipeline id: {pipeline_id}")
+        email_dir = workdir / "emails" / pipeline_id
+        request_path = email_dir / "request.json"
+        summary_path = email_dir / "summary.json"
+        if not request_path.is_file():
+            raise RuntimeError(f"request.json missing: {pipeline_id}")
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        if request.get("pipeline_id") != pipeline_id:
+            raise RuntimeError(f"request.json does not match pipeline id: {pipeline_id}")
+        database_path = request.get("index_database")
+        if not database_path:
+            raise RuntimeError(f"index database missing from request: {pipeline_id}")
+        identity = MailIdentityIndex(Path(database_path)).lookup_pipeline_id(pipeline_id)
+        if identity is None:
+            raise RuntimeError(f"pipeline id is absent from database: {pipeline_id}")
+        if identity.get("summarized") is not True:
+            raise RuntimeError(f"pipeline id is not summarized: {pipeline_id}")
+        for event in MailIdentityIndex(Path(database_path)).list_queue_events():
+            if event.get("pipeline_id") == pipeline_id:
+                value = event.get("received_at") or event.get("detected_at")
+                if isinstance(value, str) and value.strip():
+                    received_times.append(value.strip())
+        if not summary_path.is_file():
+            raise RuntimeError(f"summary.json missing: {pipeline_id}")
+        artifact = json.loads(summary_path.read_text(encoding="utf-8"))
+        if artifact.get("pipeline_id") != pipeline_id or not isinstance(artifact.get("analysis"), dict):
+            raise RuntimeError(f"summary.json does not match pipeline id: {pipeline_id}")
+    return received_times
+
+
+def run(
+    pipeline_ids: list[str],
+    agent_workdir: Path,
+    output_dir: Path,
+    config_path: Path,
+) -> dict[str, Any]:
+    workdir = agent_workdir.expanduser().resolve()
+    output_dir = output_dir.expanduser().resolve()
+    config_path = config_path.expanduser().resolve()
+    cfg = load_config(config_path)
+    timezone_name = str(cfg.get("timezone") or "UTC")
+    configure_program_timezone(timezone_name)
+    if not workdir.is_dir():
+        raise RuntimeError(f"agent work directory does not exist: {workdir}")
+    expected_output_dir = (workdir / "aggregation").resolve()
+    if output_dir != expected_output_dir:
+        raise RuntimeError("aggregate output directory must be <agent-workdir>/aggregation")
+    output_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    pipeline_ids = list(dict.fromkeys(pipeline_ids))
+    sent_times = validate_pipeline_inputs(workdir, pipeline_ids)
+    earliest_email_at, latest_email_at = email_time_bounds(sent_times)
+    stage_cfg = cfg.get("aggregator") or {}
+    oc = stage_cfg.get("opencode") or {}
+    model_cfg = stage_cfg.get("model") or {}
+    executable = str(oc.get("executable") or (Path.home() / ".opencode" / "bin" / "opencode"))
+    agent = str(oc.get("agent") or "mail-daily-aggregator")
+    provider = str(model_cfg.get("provider") or "deepseek")
+    model_name = str(model_cfg.get("name") or "deepseek-flash")
+    model = f"{provider}/{model_name}"
+    timeout = int(oc.get("timeout_seconds") or 600)
+    runtime_root = Path(oc.get("runtime_root") or opencode_runtime_root()).expanduser().resolve()
+    runtime_config = runtime_root / "config"
+    aggregate_id = hashlib.sha256(str(workdir).encode("utf-8")).hexdigest()[:16]
+    runtime_instance = runtime_root / "aggregations" / aggregate_id
+    runtime_home = runtime_instance / "home"
+    runtime_data = runtime_instance / "data"
+    runtime_cache = runtime_instance / "cache"
+    runtime_state = runtime_instance / "state"
+    for path in (runtime_home, runtime_config / "opencode", runtime_data, runtime_cache, runtime_state):
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    env = dict(os.environ)
+    env["DEEPSEEK_API_KEY"] = resolve_key(stage_cfg)
+    env["HOME"] = str(runtime_home)
+    env["XDG_CONFIG_HOME"] = str(runtime_config)
+    env["XDG_DATA_HOME"] = str(runtime_data)
+    env["XDG_CACHE_HOME"] = str(runtime_cache)
+    env["XDG_STATE_HOME"] = str(runtime_state)
+    env["OPENCODE_CONFIG_DIR"] = str(runtime_config / "opencode")
+    env["EMAIL_PIPELINE_TIMEZONE"] = timezone_name
+
+    run_dir = output_dir / "_run"
+    run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for name in ("events.jsonl", "stderr.txt"):
+        (run_dir / name).unlink(missing_ok=True)
+
+    input_ids_json = json.dumps(pipeline_ids, ensure_ascii=False, separators=(",", ":"))
+    task_prompt = (
+        "The exact validated aggregation input is INPUT_PIPELINE_IDS_JSON="
+        f"{input_ids_json}. Read only emails/<pipeline_id>/summary.json for those IDs, "
+        "then return the required compact daily JSON digest."
+    )
+    prompt = f"{str(stage_cfg.get('system_prompt') or '').strip()}\n\n{task_prompt}".strip()
+    command = [
+        executable, "run", "--format", "json",
+        "--agent", agent,
+        "--model", model,
+        "--dir", str(workdir),
+        "--title", f"mail-daily:{workdir.name}",
+        prompt,
+    ]
+    completed = subprocess.run(
+        command, stdin=subprocess.DEVNULL, text=True, capture_output=True,
+        timeout=timeout, env=env, check=False,
+    )
+    secure_write(run_dir / "events.jsonl", completed.stdout)
+    if completed.stderr:
+        secure_write(run_dir / "stderr.txt", completed.stderr)
+    session_id, tools_used, result = parse_events(completed.stdout)
+    if completed.returncode != 0 or result is None:
+        raise RuntimeError(f"daily aggregation failed: {completed.stderr[-1000:]} {completed.stdout[-1000:]}")
+    validate_daily_summary(result)
+    artifact = build_aggregation_artifact(
+        result,
+        pipeline_ids,
+        earliest_email_at=earliest_email_at,
+        latest_email_at=latest_email_at,
+        session_id=session_id,
+        model=model,
+        tools_used=tools_used,
+    )
+    output_path = output_dir / aggregation_filename(artifact["generated_at"])
+    if output_path.exists():
+        raise RuntimeError(f"aggregation output already exists: {output_path}")
+    secure_write(output_path, json.dumps(artifact, ensure_ascii=False, indent=2))
+    return {"ok": True, "summary_path": str(output_path), "session_id": session_id}

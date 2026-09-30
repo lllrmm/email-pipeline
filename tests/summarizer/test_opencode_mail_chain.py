@@ -13,7 +13,7 @@ from email_pipeline.mail_identity import MailIdentityIndex
 from email_pipeline.program_time import configure_program_timezone
 
 
-from email_pipeline.cli import summarize as OPENCODE_MAIL
+from email_pipeline.summarizer import summarize as OPENCODE_MAIL
 
 class OpenCodeMailChainTests(unittest.TestCase):
     def test_cached_fetch_persists_complete_message_headers(self) -> None:

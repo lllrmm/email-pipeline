@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "tools" / "set_email_summary_key.py"
+MODULE_PATH = Path(__file__).resolve().parents[2] / "tools" / "set_email_summary_key.py"
 SPEC = importlib.util.spec_from_file_location("set_email_summary_key", MODULE_PATH)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)

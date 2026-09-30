@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Run one isolated OpenCode session for one stable pipeline email ID."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import uuid
+from pathlib import Path
+from typing import Any
+
+from email_pipeline.config import load_config  # noqa: E402
+from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
+from email_pipeline.program_time import configure_program_timezone, now, now_rfc3339  # noqa: E402
+from email_pipeline.paths import credential_env_path, opencode_runtime_root  # noqa: E402
+
+
+def generated_at() -> str:
+    return now_rfc3339()
+
+
+def secure_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        os.replace(temp_name, path)
+        path.chmod(0o600)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise
+
+
+def resolve_email_key(stage_cfg: dict[str, Any]) -> str:
+    model = stage_cfg.get("model") or {}
+    env_name = str(model.get("api_key_env") or "EMAIL_SUMMARY_DEEPSEEK_API_KEY")
+    value = os.environ.get(env_name, "").strip()
+    if value:
+        return value
+    inline_value = str(model.get("api_key") or "").strip()
+    if inline_value:
+        return inline_value
+    env_path = credential_env_path()
+    for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith(f"{env_name}="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'")
+    raise RuntimeError(f"email summary credential not found: {env_name}")
+
+
+def walk_values(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from walk_values(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from walk_values(child)
+
+
+def parse_json_object(text: str) -> dict[str, Any] | None:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        value = json.loads(text)
+        return value if isinstance(value, dict) else None
+    except json.JSONDecodeError:
+        pass
+    matches = re.findall(r"\{[\s\S]*\}", text)
+    for candidate in reversed(matches):
+        try:
+            value = json.loads(candidate)
+            if isinstance(value, dict):
+                return value
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def parse_events(stdout: str) -> tuple[str | None, list[str], dict[str, Any] | None]:
+    events: list[dict[str, Any]] = []
+    for line in stdout.splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            events.append(value)
+    session_id: str | None = None
+    tools: list[str] = []
+    text_candidates: list[str] = []
+    for event in events:
+        for item in walk_values(event):
+            for key in ("sessionID", "sessionId", "session_id"):
+                if isinstance(item.get(key), str):
+                    session_id = item[key]
+            tool_name = item.get("tool") or item.get("toolName") or item.get("name")
+            item_type = str(item.get("type") or "").lower()
+            if isinstance(tool_name, str) and "tool" in item_type and tool_name.startswith("mail_"):
+                tools.append(tool_name)
+            if isinstance(item.get("text"), str):
+                text_candidates.append(item["text"])
+    final: dict[str, Any] | None = None
+    for text in reversed(text_candidates):
+        final = parse_json_object(text)
+        if final and "summary" in final:
+            break
+    return session_id, list(dict.fromkeys(tools)), final
+
+
+def run(
+    pipeline_id: str,
+    mail_dir: Path,
+    output: Path,
+    config_path: Path,
+    *,
+    title: str | None = None,
+) -> dict[str, Any]:
+    cfg = load_config(config_path)
+    timezone_name = str(cfg.get("timezone") or "UTC")
+    configure_program_timezone(timezone_name)
+    stage_cfg = cfg.get("summarizer") or {}
+    opencode_cfg = stage_cfg.get("opencode") or {}
+    model_cfg = stage_cfg.get("model") or {}
+    executable = str(opencode_cfg.get("executable") or (Path.home() / ".opencode" / "bin" / "opencode"))
+    agent = str(opencode_cfg.get("agent") or "mail-analyzer")
+    provider = str(model_cfg.get("provider") or "deepseek")
+    model_name = str(model_cfg.get("name") or "deepseek-flash")
+    model = f"{provider}/{model_name}"
+    timeout = int(opencode_cfg.get("timeout_seconds") or 600)
+    runtime_root = Path(
+        opencode_cfg.get("runtime_root")
+        or opencode_runtime_root()
+    ).expanduser().resolve()
+    runtime_config = runtime_root / "config"
+
+    workspace = mail_dir.expanduser().resolve()
+    output_path = output.expanduser().resolve()
+    request_path = workspace / "request.json"
+    if not workspace.is_dir() or not request_path.is_file():
+        raise RuntimeError(f"invalid fixed email workspace: {workspace}")
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    request_pipeline_id = str(request.get("pipeline_id") or "")
+    if not request_pipeline_id or request_pipeline_id != pipeline_id:
+        raise RuntimeError("pipeline_id does not match request.json")
+    if output_path != workspace and workspace not in output_path.parents:
+        raise RuntimeError("output path must stay inside the agent work directory")
+    runtime_instance = runtime_root / "sessions" / pipeline_id
+    runtime_home = runtime_instance / "home"
+    runtime_data = runtime_instance / "data"
+    runtime_cache = runtime_instance / "cache"
+    runtime_state = runtime_instance / "state"
+    for path in (runtime_home, runtime_config / "opencode", runtime_data, runtime_cache, runtime_state):
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    run_id = f"{now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    run_dir = workspace / "opencode-run"
+    run_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for name in ("events.jsonl", "stderr.txt", "metadata.json", "timeout.txt"):
+        (run_dir / name).unlink(missing_ok=True)
+
+    task_prompt = (
+        "Process the single email authorized by request.json. "
+        "You must call mail_fetch and mail_unpack, inspect all relevant MIME parts and attachments, "
+        "use link inspection only when it helps verify an event or deadline, and return the exact JSON schema "
+        "required by the mail-analyzer agent. Do not output Markdown."
+    )
+    prompt = f"{str(stage_cfg.get('system_prompt') or '').strip()}\n\n{task_prompt}".strip()
+    command = [
+        executable,
+        "run",
+        "--format", "json",
+        "--agent", agent,
+        "--model", model,
+        "--dir", str(workspace),
+        "--title", title or f"mail:{pipeline_id}",
+        prompt,
+    ]
+    env = dict(os.environ)
+    env["DEEPSEEK_API_KEY"] = resolve_email_key(stage_cfg)
+    env["EMAIL_PIPELINE_CONFIG_ROOT"] = str(config_path.expanduser().resolve().parent)
+    env["PATH"] = os.pathsep.join([
+        str(Path.home() / ".local" / "bin"),
+        str(Path(sys.executable).resolve().parent),
+        env.get("PATH", ""),
+    ])
+    env["HOME"] = str(runtime_home)
+    env["XDG_CONFIG_HOME"] = str(runtime_config)
+    env["XDG_DATA_HOME"] = str(runtime_data)
+    env["XDG_CACHE_HOME"] = str(runtime_cache)
+    env["XDG_STATE_HOME"] = str(runtime_state)
+    env["OPENCODE_CONFIG_DIR"] = str(runtime_config / "opencode")
+    env["EMAIL_PIPELINE_TIMEZONE"] = timezone_name
+    try:
+        completed = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            env=env,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        secure_write(run_dir / "timeout.txt", str(exc))
+        raise RuntimeError(f"OpenCode timed out after {timeout}s") from exc
+
+    secure_write(run_dir / "events.jsonl", completed.stdout)
+    if completed.stderr:
+        secure_write(run_dir / "stderr.txt", completed.stderr)
+    session_id, tools_used, result = parse_events(completed.stdout)
+    processor = {
+        "processor": "opencode",
+        "pipeline_id": pipeline_id,
+        "run_id": run_id,
+        "session_id": session_id,
+        "model": model,
+        "tools_used": tools_used,
+        "returncode": completed.returncode,
+    }
+    secure_write(run_dir / "metadata.json", json.dumps({
+        "run_id": run_id,
+        "pipeline_id": pipeline_id,
+        "session_id": session_id,
+        "model": model,
+        "tools_used": tools_used,
+        "returncode": completed.returncode,
+    }, ensure_ascii=False, indent=2))
+    required_artifacts = (workspace / "message.eml", workspace / "manifest.json")
+    if completed.returncode != 0 or result is None or not all(path.is_file() for path in required_artifacts):
+        return {"ok": False, "pipeline_id": pipeline_id, "processor": processor}
+    artifact = {
+        "schema_version": 3,
+        "artifact_type": "mail_individual_summary",
+        "generated_at": generated_at(),
+        "pipeline_id": pipeline_id,
+        "processor": processor,
+        "analysis": result,
+    }
+    secure_write(output_path, json.dumps(artifact, ensure_ascii=False, indent=2))
+    index_database = request.get("index_database")
+    if index_database:
+        MailIdentityIndex(Path(index_database)).set_summarized(pipeline_id, True)
+    return {
+        "ok": True,
+        "pipeline_id": pipeline_id,
+        "output": str(output_path),
+        "processor": processor,
+    }

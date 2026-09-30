@@ -11,9 +11,9 @@ email-pipeline init
 ```
 
 This initializes the current directory itself. Its `instance.toml`, `config/`,
-`auth/`, database, logs, locks, and workspaces are all instance-local. Email
-OAuth tokens and refresh scripts belong in `auth/`. There is no
-machine-wide instance registry.
+database, logs, locks, and workspaces are all instance-local. Email OAuth tokens
+live in the instance-root `auth.sqlite3`, refreshed by `outlook-token-refresh.py`
+next to it. There is no machine-wide instance registry.
 Run all subsequent commands from the initialized directory; multiple directories
 can run independently on the same machine.
 
@@ -32,30 +32,35 @@ email-pipeline service restart
 email-pipeline service status
 ```
 
-The code launcher is installed under `~/email-pipeline-code/`; each initialized
-working directory owns its configuration and runtime data directly in that directory.
+The package is installed into `~/email-pipeline-code/.venv/` as the `email-pipeline`
+console script (symlinked at `~/.local/bin/email-pipeline`); each initialized working
+directory owns its configuration and runtime data directly in that directory.
 
 ## Package Layout
 
 ```text
 src/email_pipeline/
 ├── __main__.py              unified command dispatcher
-├── cli/                     command adapters
+├── cli/                     command shells and orchestration
 │   ├── scan.py
 │   ├── enqueue_scan.py
 │   ├── watch.py
 │   ├── consume.py
-│   ├── summarize.py
-│   ├── aggregate.py
-│   ├── daily_aggregation.py
+│   ├── summarize.py         argparse shell over summarizer/
+│   ├── aggregate.py         argparse shell over aggregator/
+│   ├── daily_aggregation.py wait for a day's queue, then run aggregate
 │   └── lookup.py
+├── summarizer/
+│   └── summarize.py         single-email OpenCode analysis logic
+├── aggregator/
+│   ├── aggregate.py         daily aggregation logic
+│   └── daily_schema.py      aggregation output validation
 ├── services/
 │   └── registry.py          stable identity and IMAP-location registration
 ├── mail_identity.py         SQLite repositories and schema migration
 ├── imap_backend.py          read-only IMAP transport
 ├── agent_tools.py           restricted OpenCode mail tools
 ├── mime_extract.py          MIME, HTML, attachment, and link extraction
-├── daily_schema.py          aggregation output validation
 ├── daily_logging.py         date-partitioned logs
 ├── program_time.py          configured RFC3339 program time
 └── config.py                TOML and stage-prompt loading
@@ -101,5 +106,5 @@ SQLite has four business tables: `email`, `email_location`,
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
-python3 -m compileall -q src/email_pipeline email-pipeline.py
+python3 -m compileall -q src/email_pipeline
 ```
