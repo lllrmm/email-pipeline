@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Consume durable new-mail queue entries and summarize without aggregation."""
+"""Run one instance: summarize queued mail and keep the Outlook token fresh."""
 
 from __future__ import annotations
 
@@ -14,17 +14,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from email_pipeline.config import load_config  # noqa: E402
+from email_pipeline.config import default_config_path, load_config  # noqa: E402
 from email_pipeline.mail_identity import MailIdentityIndex  # noqa: E402
 from email_pipeline.mail_identity import get_or_create_salt  # noqa: E402
 from email_pipeline.mime_extract import secure_write_text  # noqa: E402
 from email_pipeline.services.registry import register_mail  # noqa: E402
-from email_pipeline.config import default_config_path  # noqa: E402
 from email_pipeline.program_time import configure_program_timezone  # noqa: E402
-from email_pipeline.paths import daily_root, database_path as default_database_path, salt_path as default_salt_path  # noqa: E402
+from email_pipeline.paths import daily_root, database_path as default_database_path, salt_path as default_salt_path, token_refresh_path  # noqa: E402
 
 STOP = False
 CONFIG_PATH = default_config_path()
+TOKEN_REFRESH_TIMEOUT_SECONDS = 60
 
 
 def stop(*_args) -> None:
@@ -69,6 +69,19 @@ def process_claimed_event(event: dict, config: dict, config_path: Path, index: M
         return queue_id, None, exc
 
 
+def refresh_token() -> None:
+    try:
+        completed = subprocess.run([str(token_refresh_path())], text=True, capture_output=True, timeout=TOKEN_REFRESH_TIMEOUT_SECONDS, check=False)
+    except Exception as exc:
+        print(json.dumps({"event": "token_refresh_error", "error": str(exc)[:500]}), file=sys.stderr, flush=True)
+        return
+    if completed.returncode != 0:
+        detail = (completed.stderr or "").strip()[-500:] or f"exit status {completed.returncode}"
+        print(json.dumps({"event": "token_refresh_error", "error": detail}), file=sys.stderr, flush=True)
+        return
+    print(json.dumps({"event": "token_refresh_ok"}), flush=True)
+
+
 def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
@@ -77,15 +90,21 @@ def main() -> int:
     identity = config.get("identity") or {}
     database = Path(identity.get("database_path") or default_database_path()).expanduser().resolve()
     timezone_name = str(config.get("timezone") or "UTC")
-    concurrency = max(1, int((config.get("summarizer") or {}).get("concurrency") or 1))
+    orchestrator_cfg = config.get("orchestrator") or {}
+    concurrency = max(1, int(orchestrator_cfg.get("summarizer_concurrency") or 1))
+    token_refresh_check_seconds = max(1, int(orchestrator_cfg.get("token_refresh_check_seconds") or 60))
     configure_program_timezone(timezone_name)
     index = MailIdentityIndex(database)
+    last_token_check = 0.0
     while not STOP:
+        if time.monotonic() - last_token_check >= token_refresh_check_seconds:
+            last_token_check = time.monotonic()
+            refresh_token()
         events = index.claim_events(limit=concurrency)
         if not events:
             time.sleep(2)
             continue
-        with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="mail-summary") as executor:
+        with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="summarizer") as executor:
             futures = [executor.submit(process_claimed_event, event, config, config_path, index, timezone_name) for event in events]
             for future in as_completed(futures):
                 queue_id, pipeline_id, error = future.result()

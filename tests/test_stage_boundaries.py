@@ -86,18 +86,18 @@ class StageBoundaryTests(unittest.TestCase):
     def test_removed_intermediate_summary_script_stays_removed(self) -> None:
         self.assertFalse((ROOT / "summarize-mail.py").exists())
 
-    def test_event_watcher_enqueues_and_consumer_summarizes_without_aggregation(self) -> None:
+    def test_event_watcher_enqueues_and_orchestrator_summarizes_without_aggregation(self) -> None:
         watcher = (ROOT / "src/email_pipeline/cli/watch.py").read_text(encoding="utf-8")
-        consumer = (ROOT / "src/email_pipeline/cli/consume.py").read_text(encoding="utf-8")
+        orchestrator = (ROOT / "src/email_pipeline/orchestrator.py").read_text(encoding="utf-8")
         self.assertIn("enqueue_event", watcher)
         self.assertIn("folder_snapshot", watcher)
         self.assertNotIn("idle_check", watcher)
         self.assertNotIn("idle_accelerator_mailbox", watcher)
         self.assertNotIn("daily-mail-pipeline.py", watcher)
-        self.assertIn('"summarize"', consumer)
-        self.assertIn("ThreadPoolExecutor", consumer)
-        self.assertIn('get("concurrency")', consumer)
-        self.assertNotIn("aggregate-mails-agentic.py", consumer)
+        self.assertIn('"summarize"', orchestrator)
+        self.assertIn("ThreadPoolExecutor", orchestrator)
+        self.assertIn('get("summarizer_concurrency")', orchestrator)
+        self.assertNotIn("aggregate-mails-agentic.py", orchestrator)
 
     def test_daily_aggregation_waits_for_queue_completion(self) -> None:
         source = (ROOT / "src/email_pipeline/cli/daily_aggregation.py").read_text(encoding="utf-8")

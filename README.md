@@ -21,7 +21,6 @@ All operations use one entry point:
 
 ```bash
 email-pipeline watch
-email-pipeline consume
 email-pipeline scan --from-time <RFC3339> --to-time <RFC3339>
 email-pipeline scan-enqueue --date YYYY-MM-DD
 email-pipeline summarize --pipeline-id ID --mail-dir DIR --output DIR/summary.json
@@ -45,11 +44,11 @@ src/email_pipeline/
 │   ├── scan.py
 │   ├── enqueue_scan.py
 │   ├── watch.py
-│   ├── consume.py
 │   ├── summarize.py         argparse shell over summarizer/
 │   ├── aggregate.py         argparse shell over aggregator/
 │   ├── daily_aggregation.py wait for a day's queue, then run aggregate
 │   └── lookup.py
+├── orchestrator.py          instance main process: queue workers and token refresh
 ├── summarizer/
 │   └── summarize.py         single-email OpenCode analysis logic
 ├── aggregator/
@@ -71,7 +70,7 @@ src/email_pipeline/
 ```text
 watch / scan-enqueue
   -> email_event_queue
-  -> consume
+  -> orchestrator
   -> registry + stable workspace
   -> summarize
   -> summary.json

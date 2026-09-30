@@ -86,3 +86,7 @@ def opencode_runtime_root() -> Path:
 
 def entrypoint_path() -> Path:
     return code_root() / ".venv/bin/email-pipeline"
+
+
+def interpreter_path() -> Path:
+    return code_root() / ".venv/bin/python3"

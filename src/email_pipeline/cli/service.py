@@ -8,7 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from email_pipeline.paths import code_root, entrypoint_path, instance_root
+from email_pipeline.paths import code_root, entrypoint_path, instance_root, interpreter_path
 from email_pipeline.config import default_config_path, load_config
 
 
@@ -19,9 +19,9 @@ def unit_name(root: Path, component: str) -> str:
 
 
 def unit_text(root: Path, component: str, watch_name: str) -> str:
-    dependency = watch_name if component == "queue" else "network-online.target"
-    after = f"network-online.target {dependency}" if component == "queue" else "network-online.target"
-    command = "consume" if component == "queue" else "watch"
+    dependency = watch_name if component == "orchestrator" else "network-online.target"
+    after = f"network-online.target {dependency}" if component == "orchestrator" else "network-online.target"
+    exec_line = f"{interpreter_path()} -m email_pipeline.orchestrator" if component == "orchestrator" else f"{entrypoint_path()} watch"
     return (
         "[Unit]\n"
         f"Description=Email pipeline {component} service for {root}\n"
@@ -29,7 +29,7 @@ def unit_text(root: Path, component: str, watch_name: str) -> str:
         "Wants=network-online.target\n\n"
         "[Service]\nType=simple\n"
         f"WorkingDirectory={root}\n"
-        f"ExecStart={entrypoint_path()} {command}\n"
+        f"ExecStart={exec_line}\n"
         "Restart=always\nRestartSec=15\n"
         "Environment=PYTHONUNBUFFERED=1\n"
         f"Environment=EMAIL_PIPELINE_CODE_ROOT={code_root()}\n"
@@ -47,16 +47,16 @@ def main() -> int:
         parser.error("run from an initialized instance directory")
     config = load_config(default_config_path())
     watcher_enabled = bool((config.get("watcher") or {}).get("enabled", False))
-    names = {"queue": unit_name(root, "queue"), "watch": unit_name(root, "watch")}
+    names = {"orchestrator": unit_name(root, "orchestrator"), "watch": unit_name(root, "watch")}
     unit_dir = Path.home() / ".config" / "systemd" / "user"
     if args.action in {"start", "restart", "enable", "status"}:
         unit_dir.mkdir(parents=True, exist_ok=True)
-        for component in ("queue", "watch"):
+        for component in ("orchestrator", "watch"):
             unit_path = unit_dir / names[component]
             unit_path.write_text(unit_text(root, component, names["watch"]), encoding="utf-8")
             unit_path.chmod(0o600)
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-    actions = {"queue": args.action, "watch": args.action if watcher_enabled else ("stop" if args.action in {"start", "restart"} else "disable" if args.action == "enable" else args.action)}
+    actions = {"orchestrator": args.action, "watch": args.action if watcher_enabled else ("stop" if args.action in {"start", "restart"} else "disable" if args.action == "enable" else args.action)}
     result = 0
     for component, action in actions.items():
         result = max(result, subprocess.run(["systemctl", "--user", action, names[component]], check=False).returncode)

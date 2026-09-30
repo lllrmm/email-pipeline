@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from contextlib import contextmanager
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any, Iterator
 from .paths import token_refresh_path
 
 IMAP_SOCKET_TIMEOUT_SECONDS = 60
+TOKEN_READ_ONLY_FLAG = "--read-only"
 
 def imap_config(config: dict[str, Any]) -> dict[str, Any]:
     value = config.get("imap") or {}
@@ -17,12 +19,13 @@ def imap_config(config: dict[str, Any]) -> dict[str, Any]:
         "port": int(value.get("port") or 993),
         "ssl": bool(value.get("ssl", True)),
         "username": str(value.get("username") or ""),
-        "token_command": str(value.get("token_command") or token_refresh_path()),
+        "token_command": str(value.get("token_command") or f"{token_refresh_path()} {TOKEN_READ_ONLY_FLAG}"),
     }
 
 
 def access_token(command: str) -> str:
-    completed = subprocess.run([command], text=True, capture_output=True, timeout=60, check=False)
+    argv = shlex.split(command) if isinstance(command, str) else [str(part) for part in command]
+    completed = subprocess.run(argv, text=True, capture_output=True, timeout=60, check=False)
     token = completed.stdout.strip()
     if completed.returncode != 0 or not token:
         raise RuntimeError(f"IMAP OAuth token command failed: {completed.stderr.strip()[:500]}")

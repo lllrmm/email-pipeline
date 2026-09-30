@@ -1,7 +1,6 @@
 timezone = "Asia/Hong_Kong"
 
 [summarizer]
-concurrency = 8
 system_prompt_file = "summarizer-system-prompt.txt"
 
 [summarizer.model]
@@ -28,6 +27,10 @@ api_key_env = "EMAIL_SUMMARY_DEEPSEEK_API_KEY"
 [aggregator.opencode]
 agent = "mail-daily-aggregator"
 timeout_seconds = 600
+
+[orchestrator]
+summarizer_concurrency = 8
+token_refresh_check_seconds = 60
 
 [scanner]
 concurrency = 1
