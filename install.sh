@@ -21,6 +21,8 @@ find "$package_dir" -type d -exec chmod 700 {} +
 find "$package_dir" -type f -exec chmod 600 {} +
 install -m 700 "$repo_dir/email-pipeline.py" "$code_root/email-pipeline.py"
 install -m 700 "$repo_dir/email-pipeline" "$code_root/email-pipeline"
+install -d -m 700 "$HOME/.local/bin"
+install -m 755 "$repo_dir/email-pipeline" "$HOME/.local/bin/email-pipeline"
 install -m 600 "$repo_dir/email-pipeline-watch.service" "$service_dir/email-pipeline-watch.service"
 install -m 600 "$repo_dir/email-pipeline-queue.service" "$service_dir/email-pipeline-queue.service"
 

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-root=$(cd -- "$(dirname -- "$0")" && pwd)
+script_root=$(cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)
+if [ -f "$script_root/email-pipeline.py" ]; then
+  root=$script_root
+else
+  root=${EMAIL_PIPELINE_CODE_ROOT:-"$HOME/email-pipeline-code"}
+fi
 exec python3 "$root/email-pipeline.py" "$@"
