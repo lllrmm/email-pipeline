@@ -4,20 +4,32 @@ Read-only Outlook pipeline using IMAPClient, SQLite, and isolated OpenCode sessi
 
 ## Commands
 
+Initialize an instance in the current working directory:
+
+```bash
+email-pipeline init
+```
+
+This initializes the current directory itself. Its `instance.toml`, `config/`,
+and `data/` contain that instance's configuration, database, logs, locks, and
+workspaces. There is no machine-wide instance registry.
+Run all subsequent commands from the initialized directory; multiple directories
+can run independently on the same machine.
+
 All operations use one entry point:
 
 ```bash
-python3 email-pipeline.py watch
-python3 email-pipeline.py consume
-python3 email-pipeline.py scan --from-time <RFC3339> --to-time <RFC3339>
-python3 email-pipeline.py scan-enqueue --date YYYY-MM-DD
-python3 email-pipeline.py summarize --pipeline-id ID --mail-dir DIR --output DIR/summary.json
-python3 email-pipeline.py aggregate-day --date YYYY-MM-DD
-python3 email-pipeline.py lookup --pipeline-id ID
+email-pipeline watch
+email-pipeline consume
+email-pipeline scan --from-time <RFC3339> --to-time <RFC3339>
+email-pipeline scan-enqueue --date YYYY-MM-DD
+email-pipeline summarize --pipeline-id ID --mail-dir DIR --output DIR/summary.json
+email-pipeline aggregate-day --date YYYY-MM-DD
+email-pipeline lookup --pipeline-id ID
 ```
 
-Code is installed under `~/email-pipeline-code/`, configuration under
-`~/.email-pipeline/`, and runtime data under `~/email-pipeline/`.
+The code launcher is installed under `~/email-pipeline-code/`; each initialized
+working directory owns its configuration and runtime data directly in that directory.
 
 ## Package Layout
 
