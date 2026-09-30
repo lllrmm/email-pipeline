@@ -5,7 +5,6 @@ import sys
 from .agent_tools import main as tools_main
 from .cli.aggregate import main as aggregate_main
 from .cli.daily_aggregation import main as aggregate_day_main
-from .cli.enqueue_scan import main as scan_enqueue_main
 from .cli.lookup import main as lookup_main
 from .cli.init import main as init_main
 from .cli.service import main as service_main
@@ -16,7 +15,6 @@ from .services.registry import main as register_main
 
 COMMANDS = {
     "scan": scan_main,
-    "scan-enqueue": scan_enqueue_main,
     "watch": watch_main,
     "register": register_main,
     "lookup": lookup_main,

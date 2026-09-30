@@ -22,13 +22,13 @@ def load_script(name: str, path: Path):
 
 class StageBoundaryTests(unittest.TestCase):
     def test_unpack_stage_has_no_model_dependency(self) -> None:
-        source = (ROOT / "src/email_pipeline/cli/scan.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/email_pipeline/scanner/scan.py").read_text(encoding="utf-8")
         self.assertNotIn("import requests", source)
         self.assertNotIn("DEEPSEEK_API_KEY", source)
         self.assertNotIn("call_model(", source)
 
     def test_scanner_and_watcher_use_daily_logging(self) -> None:
-        scanner = (ROOT / "src/email_pipeline/cli/scan.py").read_text(encoding="utf-8")
+        scanner = (ROOT / "src/email_pipeline/scanner/scan.py").read_text(encoding="utf-8")
         watcher = (ROOT / "src/email_pipeline/cli/watch.py").read_text(encoding="utf-8")
         self.assertIn("configure_run_logger", scanner)
         self.assertIn('"scanner"', scanner)
@@ -36,8 +36,8 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('"watcher"', watcher)
         self.assertIn("from zoneinfo import ZoneInfo", scanner)
 
-    def test_scan_orchestrator_only_enqueues(self) -> None:
-        source = (ROOT / "src/email_pipeline/cli/enqueue_scan.py").read_text(encoding="utf-8")
+    def test_scanner_registers_only_transport_events(self) -> None:
+        source = (ROOT / "src/email_pipeline/scanner/scan.py").read_text(encoding="utf-8")
         self.assertIn("enqueue_event", source)
         self.assertNotIn("summarize-mail-agentic.py", source)
         self.assertNotIn("aggregate-mails-agentic.py", source)
@@ -45,20 +45,17 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertNotIn("summarized", source)
 
     def test_scanner_and_fallback_use_queue_as_idempotency_boundary(self) -> None:
-        scanner = (ROOT / "src/email_pipeline/cli/scan.py").read_text(encoding="utf-8")
-        orchestrator = (ROOT / "src/email_pipeline/cli/enqueue_scan.py").read_text(encoding="utf-8")
+        scanner = (ROOT / "src/email_pipeline/scanner/scan.py").read_text(encoding="utf-8")
         indexer = (ROOT / "src/email_pipeline/services/registry.py").read_text(encoding="utf-8")
         summarizer = (ROOT / "src/email_pipeline/summarizer/summarize.py").read_text(encoding="utf-8")
 
         self.assertNotIn('identity.get("summarized")', scanner)
-        self.assertIn("enqueue_event", orchestrator)
-        self.assertNotIn('identity.get("summarized")', orchestrator)
+        self.assertIn("enqueue_event", scanner)
         self.assertNotIn('identity.get("summarized")', indexer)
         self.assertNotIn('identity.get("summarized")', summarizer)
 
     def test_index_mail_accepts_only_rfc_identity_inputs(self) -> None:
         indexer = (ROOT / "src/email_pipeline/services/registry.py").read_text(encoding="utf-8")
-        scanner = (ROOT / "src/email_pipeline/cli/scan.py").read_text(encoding="utf-8")
 
         self.assertIn('parser.add_argument("--rfc-message-id"', indexer)
         self.assertIn('parser.add_argument("--folder"', indexer)
@@ -78,7 +75,7 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertIn('workspace / "manifest.json"', source)
 
     def test_orchestrator_has_no_provider_or_parser_dependency(self) -> None:
-        source = (ROOT / "src/email_pipeline/cli/enqueue_scan.py").read_text(encoding="utf-8")
+        source = (ROOT / "src/email_pipeline/scanner/scan.py").read_text(encoding="utf-8")
         self.assertNotIn("import requests", source)
         self.assertNotIn("himalaya envelope", source.lower())
         self.assertNotIn("extract_message", source)
@@ -122,17 +119,15 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertNotIn("daily-mail-pipeline.py", aggregator)
 
     def test_scanner_uses_stdout_and_logs_without_scan_log_artifacts(self) -> None:
-        indexer = (ROOT / "src/email_pipeline/cli/scan.py").read_text(encoding="utf-8")
-        orchestrator_source = (ROOT / "src/email_pipeline/cli/enqueue_scan.py").read_text(encoding="utf-8")
+        scanner = (ROOT / "src/email_pipeline/scanner/scan.py").read_text(encoding="utf-8")
 
-        self.assertNotIn('artifact_type": "mail_scan_log"', indexer)
-        self.assertNotIn('/ "scan-log"', indexer)
-        self.assertIn('"mails": day_mails', indexer)
-        self.assertNotIn('"mail-index.json"', indexer)
-        self.assertNotIn('"mail-index.json"', orchestrator_source)
-        self.assertNotIn('"bundle.json"', orchestrator_source)
-        self.assertNotIn("materialize_bundle", orchestrator_source)
-        self.assertNotIn("--scan-log", orchestrator_source)
+        self.assertNotIn('artifact_type": "mail_scan_log"', scanner)
+        self.assertNotIn('/ "scan-log"', scanner)
+        self.assertIn('"mails": day_mails', scanner)
+        self.assertNotIn('"mail-index.json"', scanner)
+        self.assertNotIn('"bundle.json"', scanner)
+        self.assertNotIn("materialize_bundle", scanner)
+        self.assertNotIn("--scan-log", scanner)
 
 
 

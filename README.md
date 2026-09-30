@@ -22,7 +22,7 @@ All operations use one entry point:
 ```bash
 email-pipeline watch
 email-pipeline scan --from-time <RFC3339> --to-time <RFC3339>
-email-pipeline scan-enqueue --date YYYY-MM-DD
+email-pipeline scan --date YYYY-MM-DD --register
 email-pipeline summarize --pipeline-id ID --mail-dir DIR --output DIR/summary.json
 email-pipeline aggregate-day --date YYYY-MM-DD
 email-pipeline lookup --pipeline-id ID
@@ -41,14 +41,15 @@ directory owns its configuration and runtime data directly in that directory.
 src/email_pipeline/
 ├── __main__.py              unified command dispatcher
 ├── cli/                     command shells and orchestration
-│   ├── scan.py
-│   ├── enqueue_scan.py
+│   ├── scan.py              argparse shell over scanner/
 │   ├── watch.py
 │   ├── summarize.py         argparse shell over summarizer/
 │   ├── aggregate.py         argparse shell over aggregator/
 │   ├── daily_aggregation.py wait for a day's queue, then run aggregate
 │   └── lookup.py
 ├── orchestrator.py          instance main process: queue workers and token refresh
+├── scanner/
+│   └── scan.py              IMAP scanning and queue registration logic
 ├── summarizer/
 │   └── summarize.py         single-email OpenCode analysis logic
 ├── aggregator/
@@ -68,7 +69,7 @@ src/email_pipeline/
 ## Runtime Flow
 
 ```text
-watch / scan-enqueue
+watch / scan --register
   -> email_event_queue
   -> orchestrator
   -> registry + stable workspace
