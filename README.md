@@ -27,6 +27,8 @@ email-pipeline scan-enqueue --date YYYY-MM-DD
 email-pipeline summarize --pipeline-id ID --mail-dir DIR --output DIR/summary.json
 email-pipeline aggregate-day --date YYYY-MM-DD
 email-pipeline lookup --pipeline-id ID
+email-pipeline service start
+email-pipeline service status
 ```
 
 The code launcher is installed under `~/email-pipeline-code/`; each initialized

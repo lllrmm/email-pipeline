@@ -40,6 +40,7 @@ username = "rlidf@connect.ust.hk"
 concurrency = 1
 
 [watcher]
+enabled = false
 poll_seconds = 60
 debounce_seconds = 10
 

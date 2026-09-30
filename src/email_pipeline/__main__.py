@@ -9,6 +9,7 @@ from .cli.daily_aggregation import main as aggregate_day_main
 from .cli.enqueue_scan import main as scan_enqueue_main
 from .cli.lookup import main as lookup_main
 from .cli.init import main as init_main
+from .cli.service import main as service_main
 from .cli.scan import main as scan_main
 from .cli.summarize import main as summarize_main
 from .cli.watch import main as watch_main
@@ -26,6 +27,7 @@ COMMANDS = {
     "aggregate-day": aggregate_day_main,
     "tools": tools_main,
     "init": init_main,
+    "service": service_main,
 }
 
 
