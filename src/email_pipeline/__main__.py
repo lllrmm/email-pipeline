@@ -10,12 +10,10 @@ from .cli.init import main as init_main
 from .cli.service import main as service_main
 from .cli.scan import main as scan_main
 from .cli.summarize import main as summarize_main
-from .cli.watch import main as watch_main
 from .services.registry import main as register_main
 
 COMMANDS = {
     "scan": scan_main,
-    "watch": watch_main,
     "register": register_main,
     "lookup": lookup_main,
     "summarize": summarize_main,

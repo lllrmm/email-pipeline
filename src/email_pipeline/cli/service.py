@@ -8,8 +8,10 @@ import re
 import subprocess
 from pathlib import Path
 
-from email_pipeline.paths import code_root, entrypoint_path, instance_root, interpreter_path
+from email_pipeline.paths import code_root, instance_root, interpreter_path
 from email_pipeline.config import default_config_path, load_config
+
+MODULES = {"orchestrator": "email_pipeline.orchestrator", "watch": "email_pipeline.watcher"}
 
 
 def unit_name(root: Path, component: str) -> str:
@@ -21,7 +23,7 @@ def unit_name(root: Path, component: str) -> str:
 def unit_text(root: Path, component: str, watch_name: str) -> str:
     dependency = watch_name if component == "orchestrator" else "network-online.target"
     after = f"network-online.target {dependency}" if component == "orchestrator" else "network-online.target"
-    exec_line = f"{interpreter_path()} -m email_pipeline.orchestrator" if component == "orchestrator" else f"{entrypoint_path()} watch"
+    exec_line = f"{interpreter_path()} -m {MODULES[component]}"
     return (
         "[Unit]\n"
         f"Description=Email pipeline {component} service for {root}\n"

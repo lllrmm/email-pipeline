@@ -29,7 +29,7 @@ class StageBoundaryTests(unittest.TestCase):
 
     def test_scanner_and_watcher_use_daily_logging(self) -> None:
         scanner = (ROOT / "src/email_pipeline/scanner/scan.py").read_text(encoding="utf-8")
-        watcher = (ROOT / "src/email_pipeline/cli/watch.py").read_text(encoding="utf-8")
+        watcher = (ROOT / "src/email_pipeline/watcher/watch.py").read_text(encoding="utf-8")
         self.assertIn("configure_run_logger", scanner)
         self.assertIn('"scanner"', scanner)
         self.assertIn("configure_daily_logger", watcher)
@@ -84,7 +84,7 @@ class StageBoundaryTests(unittest.TestCase):
         self.assertFalse((ROOT / "summarize-mail.py").exists())
 
     def test_event_watcher_enqueues_and_orchestrator_summarizes_without_aggregation(self) -> None:
-        watcher = (ROOT / "src/email_pipeline/cli/watch.py").read_text(encoding="utf-8")
+        watcher = (ROOT / "src/email_pipeline/watcher/watch.py").read_text(encoding="utf-8")
         orchestrator = (ROOT / "src/email_pipeline/orchestrator.py").read_text(encoding="utf-8")
         self.assertIn("enqueue_event", watcher)
         self.assertIn("folder_snapshot", watcher)
