@@ -28,6 +28,7 @@ email-pipeline summarize --pipeline-id ID --mail-dir DIR --output DIR/summary.js
 email-pipeline aggregate-day --date YYYY-MM-DD
 email-pipeline lookup --pipeline-id ID
 email-pipeline service start
+email-pipeline service restart
 email-pipeline service status
 ```
 

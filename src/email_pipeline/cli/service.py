@@ -41,7 +41,7 @@ def unit_text(root: Path, component: str, watch_name: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Manage this instance's systemd service.")
-    parser.add_argument("action", choices=("start", "stop", "enable", "disable", "status"))
+    parser.add_argument("action", choices=("start", "stop", "restart", "enable", "disable", "status"))
     args = parser.parse_args()
     root = instance_root()
     if root is None:
@@ -50,14 +50,14 @@ def main() -> int:
     watcher_enabled = bool((config.get("watcher") or {}).get("enabled", False))
     names = {"queue": unit_name(root, "queue"), "watch": unit_name(root, "watch")}
     unit_dir = Path.home() / ".config" / "systemd" / "user"
-    if args.action in {"start", "enable", "status"}:
+    if args.action in {"start", "restart", "enable", "status"}:
         unit_dir.mkdir(parents=True, exist_ok=True)
         for component in ("queue", "watch"):
             unit_path = unit_dir / names[component]
             unit_path.write_text(unit_text(root, component, names["watch"]), encoding="utf-8")
             unit_path.chmod(0o600)
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-    actions = {"queue": args.action, "watch": args.action if watcher_enabled else ("stop" if args.action == "start" else "disable" if args.action == "enable" else args.action)}
+    actions = {"queue": args.action, "watch": args.action if watcher_enabled else ("stop" if args.action in {"start", "restart"} else "disable" if args.action == "enable" else args.action)}
     result = 0
     for component, action in actions.items():
         result = max(result, subprocess.run(["systemctl", "--user", action, names[component]], check=False).returncode)
